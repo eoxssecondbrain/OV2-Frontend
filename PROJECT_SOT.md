@@ -55,11 +55,12 @@ Questions that need an answer from the project owner before related work can pro
 - ~~Write mechanism for thread auto-save?~~ → Call the thread vault's own MCP save tool from the outlet Function; do not reimplement git logic in Open WebUI.
 - ~~Skills content — defined from scratch?~~ → No, port existing CLAUDE.md/SKILL.md content from both vaults.
 
-**Still open, posed as forced-choice questions to the project owner (2026-07-29):**
-- Client-vault isolation model: fully separate infra per client company vs. one shared deployment with a company dimension added to the existing per-user-secret model.
-- Scope of this workstream: frontend/connection work only (vaults assumed pre-populated) vs. also building the per-client ingestion pipeline.
-- Whether cross-link-into-main-vault (pointer lines from thread vault into the knowledge vault) matters for v1, or is fully out of scope for now.
-- Whether every client's vault will share OV2's exact folder schema (one generic skill template works for all clients) or schemas may vary per client (bespoke skill per client).
+**Answered by project owner (2026-07-29):**
+- Scope of this workstream → **Frontend/connection only.** Client vaults (knowledge + thread) are assumed to already exist and be populated elsewhere; this build does not include ingestion pipelines.
+- Cross-link-into-main-vault for v1 → **Out of scope.** Thread vault stays fully isolated; no pointer-writing into the knowledge vault in this build.
+- Skill schema across clients → **One canonical schema.** Every client vault mirrors OV2's `raw/`+`wiki/` structure exactly, so one generic navigation skill (parameterized by client/connection) covers all clients — no bespoke per-client skill authoring needed.
+- Client-vault isolation model (separate infra per client vs. shared infra with logical isolation) → **Not decided yet.** Genuinely open.
+  - Working note: since ingestion is out of scope and the schema is canonical, this decision doesn't actually block frontend work. Open WebUI's existing MCP model already supports the right shape regardless of how the vault infra is hosted: one configured MCP connection per client company, restricted via its existing per-group `access_grants` to that company's user group. Whether the Render/repo layer behind each connection is fully separate or shared-with-isolation is a hosting decision made by whoever stands up those MCP servers — it doesn't change how the frontend consumes them. Safe to proceed on the frontend side without forcing this decision now; revisit once the vault-hosting side is ready to answer it.
 
 **Still outstanding, not yet asked:**
 - What department/use case is the first target — internal EOXS use, or already a specific external client?
@@ -70,12 +71,14 @@ Questions that need an answer from the project owner before related work can pro
 ## 5. Scope
 
 ### In scope
-- Skills (backend-configurable capability bundles)
-- Configurable MCP connection to the OV2 vault
-- Automatic per-thread conversation logging to a vault ("Thread Ogil")
+- Skills (backend-configurable capability bundles; one canonical vault-navigation skill, parameterized per client)
+- Configurable MCP connection per client (company) to that client's knowledge vault, one connection per company with access grants scoped to that company's users
+- Automatic per-thread conversation logging: outlet Function calls the thread vault's existing MCP save tool after every response
 
-### Explicitly out of scope
+### Explicitly out of scope (v1)
 - Using Claude's own frontend/MCP client in the shipped product
+- Ingestion/population of client knowledge vaults (assumed to already exist, populated elsewhere)
+- Cross-link workflow (pointer lines from thread vault into the main knowledge vault)
 
 ## 6. Architecture Notes
 
