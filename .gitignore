@@ -23,6 +23,25 @@ CLAUDE.md
 static/pyodide/*
 !static/pyodide/pyodide-lock.json
 
+# Backend branding/static defaults seeded on first run (per-instance customization,
+# not source — see backend/open_webui/main.py startup). Fonts/swagger-ui under
+# backend/open_webui/static/ are still tracked; only the runtime-copied files below are not.
+backend/open_webui/static/apple-touch-icon.png
+backend/open_webui/static/custom.css
+backend/open_webui/static/favicon-96x96.png
+backend/open_webui/static/favicon.ico
+backend/open_webui/static/favicon.png
+backend/open_webui/static/favicon.svg
+backend/open_webui/static/loader.js
+backend/open_webui/static/logo.png
+backend/open_webui/static/site.webmanifest
+backend/open_webui/static/splash-dark.png
+backend/open_webui/static/splash.png
+backend/open_webui/static/user-import.csv
+backend/open_webui/static/user.png
+backend/open_webui/static/web-app-manifest-192x192.png
+backend/open_webui/static/web-app-manifest-512x512.png
+
 # Distribution / packaging
 .Python
 build/
