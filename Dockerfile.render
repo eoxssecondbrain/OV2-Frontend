@@ -65,6 +65,12 @@ RUN pip install --no-cache-dir uv \
 COPY --from=build /app/build /app/build
 COPY --from=build /app/package.json /app/package.json
 
+# Required, not cosmetic: env.py:179 reads BASE_DIR/CHANGELOG.md at import time,
+# and its fallback (pkgutil.get_data, line 184) raises OUTSIDE the try block --
+# so a missing changelog aborts the entire application import, not just the
+# release-notes feature.
+COPY --from=build /app/CHANGELOG.md /app/CHANGELOG.md
+
 COPY backend .
 COPY vault_bridge.py /app/vault_bridge.py
 COPY render-start.sh /app/render-start.sh
