@@ -47,3 +47,5 @@
 # Misc
 *.env text eol=lf
 *.lock text eol=lf
+# Dockerfiles must not carry CRLF into a Linux build
+Dockerfile* text eol=lf

@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1
+#
+# Cruz -- slim production image for Render.
+#
+# Differs from the stock Dockerfile in two deliberate ways (PROJECT_SOT.md 7h):
+#
+#   1. No torch / sentence-transformers. The stock Dockerfile installs torch
+#      unconditionally (line 154) and pre-downloads embedding + Whisper models,
+#      producing a multi-GB image and a very slow build. Cruz has never had
+#      those installed, so this image reproduces the setup that is actually
+#      verified to work. Consequence: document upload / RAG stays disabled.
+#
+#   2. Both MCP bridges run inside this container alongside the backend. That
+#      keeps the tool-server URLs already stored in the database
+#      (127.0.0.1:9090 and :9091) valid, so no database rewrite is needed.
+#
+# Python is pinned to 3.12: the backend requires >=3.11,<3.13.
+
+######## frontend build ########
+FROM node:22-alpine3.20 AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --force
+
+COPY . .
+ENV APP_BUILD_HASH=cruz-render
+RUN npm run build
+
+######## backend ########
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    ENV=prod \
+    PORT=8080 \
+    WEBUI_NAME=Cruz \
+    DO_NOT_TRACK=true \
+    SCARF_NO_ANALYTICS=true \
+    ANONYMIZED_TELEMETRY=false
+
+WORKDIR /app/backend
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates pandoc netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/requirements-render.txt ./requirements.txt
+RUN pip install --no-cache-dir uv \
+    && uv pip install --system --no-cache-dir -r requirements.txt
+
+# Frontend build output. env.py resolves FRONTEND_BUILD_DIR to BASE_DIR/build,
+# where BASE_DIR is the parent of the backend directory -- i.e. /app/build.
+COPY --from=build /app/build /app/build
+COPY --from=build /app/package.json /app/package.json
+
+COPY backend .
+COPY vault_bridge.py /app/vault_bridge.py
+COPY render-start.sh /app/render-start.sh
+RUN chmod +x /app/render-start.sh
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s \
+  CMD curl --silent --fail http://localhost:${PORT:-8080}/health || exit 1
+
+CMD ["/app/render-start.sh"]
