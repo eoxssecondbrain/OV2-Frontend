@@ -1,0 +1,47 @@
+# Render Blueprint for Cruz.
+#
+# Standard (2 GB), not Starter: Starter has the SAME 512 MB as the free tier,
+# and this container runs three Python processes -- the backend alone measures
+# ~372 MB idle, plus two MCP bridges. Starter would OOM. See PROJECT_SOT.md 7h.
+#
+# Every secret is `sync: false`, i.e. set once in the Render dashboard and never
+# stored in git.
+
+services:
+  - type: web
+    name: cruz
+    runtime: docker
+    dockerfilePath: ./Dockerfile.render
+    plan: standard
+    region: singapore          # closest to Delhi; change if the team is elsewhere
+    branch: deploy/render
+    healthCheckPath: /health
+
+    # Holds webui.db plus uploads and cache. Without this the configuration is
+    # destroyed on every deploy and restart.
+    disk:
+      name: cruz-data
+      mountPath: /app/backend/data
+      sizeGB: 2
+
+    envVars:
+      - key: WEBUI_NAME
+        value: Cruz
+      - key: ENV
+        value: prod
+
+      # Long random value. NOT the local dev one -- generate a fresh secret for
+      # production. Changing it later signs everyone out, which is harmless.
+      - key: WEBUI_SECRET_KEY
+        generateValue: true
+
+      # Set to the service's public URL after the first deploy, e.g.
+      # https://cruz.onrender.com -- used for absolute links and redirects.
+      - key: WEBUI_URL
+        sync: false
+
+      # Secret-bearing MCP upstreams. Paste the full SSE URLs, no angle brackets.
+      - key: VAULT_MCP_URL
+        sync: false
+      - key: THREADS_MCP_URL
+        sync: false

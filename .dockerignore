@@ -18,3 +18,13 @@ uploads
 **/*.db
 _test
 backend/data/*
+
+# --- Cruz additions ---
+# .venv is NOT matched by the "venv" entry above.
+.venv
+.run
+/build
+# Local reference copies of the vaults: company data, gitignored, and must
+# never end up inside a container image.
+claude-notes-vault
+raj-wiki-vault

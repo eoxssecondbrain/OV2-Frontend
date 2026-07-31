@@ -889,8 +889,9 @@ if LICENSE_PUBLIC_KEY:
 ####################################
 
 WEBUI_NAME = os.getenv('WEBUI_NAME', 'Open WebUI')
-if WEBUI_NAME != 'Open WebUI':
-    WEBUI_NAME += ' (Open WebUI)'
+# CRUZ BRAND PATCH — upstream re-appends " (Open WebUI)" to any custom name.
+# Removed under Open WebUI licence clause 4(i) (≤50 end users per rolling 30 days).
+# Revert this block if that threshold is ever exceeded without an enterprise licence.
 
 WEBUI_FAVICON_URL = 'https://openwebui.com/favicon.png'
 WEBUI_BUILD_HASH = os.getenv('WEBUI_BUILD_HASH', 'dev-build')

@@ -311,3 +311,12 @@ cypress/videos
 cypress/screenshots
 .vscode/settings.json
 .cptr
+
+# Local reference copy of the EOXS vault — never commit (company data)
+raj-wiki-vault/
+
+# Local reference copy of the Claude OV thread vault — never commit (chat transcripts)
+claude-notes-vault/
+
+# Cruz local runtime logs
+.run/
