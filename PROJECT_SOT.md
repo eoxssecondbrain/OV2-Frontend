@@ -608,6 +608,46 @@ both bridges disappear and it deploys as a single service. If free *and*
 persistent ever becomes a hard requirement, the answer is an always-free VM
 (e.g. Oracle Cloud ARM), not Render.
 
+## 7i. Render deployment built (2026-07-31)
+
+Decision taken to pay for hosting. Artifacts committed to branch
+**`deploy/render`** on `eoxssecondbrain/OV2-Frontend` (commit `757109d07`).
+Runbook: `DEPLOY-RENDER.md`.
+
+**Cost correction issued this session.** Starter was recommended at ~$7/mo on the
+strength of it being the cheapest paid tier. Render's compute-plan docs show
+**Starter is 512 MB — identical to Free**; only the sleep behaviour and disk
+support differ. The backend measures 372 MB idle and the container runs three
+Python processes, so Starter would OOM. **Standard (2 GB) is the requirement.**
+Render's pricing page could not be fetched, so the dollar figure for Standard
+(~$25/mo) is unconfirmed and must be checked in the dashboard before it is
+quoted onward.
+
+| Decision | Choice | Reasoning |
+|---|---|---|
+| Configuration | Copy existing `webui.db` onto a 2 GB persistent disk | Carries over both workspace models, both MCP registrations with filters and grants, all accounts and chats. No hand rebuild, nothing silently missed (e.g. the `stream_options` usage tracking from §7d). |
+| Bridges | Bundled in the same container, supervised | Keeps the `127.0.0.1:9090/9091` URLs already in the DB valid — **no database rewrite**. Ships today without editing two live production services. |
+| Image | No torch / `sentence-transformers` | Reproduces the verified working set. Stock Dockerfile installs torch unconditionally (line 154) → multi-GB image, very slow builds. RAG stays disabled. |
+| Repo | New branch, `main` untouched | Diff reviewable before merge. |
+
+**Hazards caught while building, worth remembering:**
+
+- `.dockerignore` excluded `venv` but **not `.venv`**, and did not exclude the
+  local `claude-notes-vault` / `raj-wiki-vault` reference copies — a local
+  `docker build` would have baked company vault data into the image. Both added.
+- `*.sh text eol=lf` was already in `.gitattributes` (a CRLF entrypoint fails in
+  a Linux container with a misleading `\r: command not found`). `Dockerfile*`
+  added for the same reason.
+- The image was **not** built locally before pushing: Docker Desktop was down,
+  and building on the laptop currently serving the live demo would contend for
+  RAM and CPU. Static checks only (bash syntax, YAML parse, referenced files
+  present). **The first real build happens on Render and may need iteration.**
+
+**Once Render is live, the laptop stack must be stopped** (`stop-cruz.sh` plus
+disabling the `Cruz Demo Stack` task). Running both means two divergent
+databases, with chats splitting by whichever URL a user happened to open and no
+way to merge them afterwards.
+
 ## 8. Next steps
 
 1. **Verify answer quality in the UI** with both models on identical questions.
