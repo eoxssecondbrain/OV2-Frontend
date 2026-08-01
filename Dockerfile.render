@@ -74,6 +74,10 @@ COPY --from=build /app/CHANGELOG.md /app/CHANGELOG.md
 COPY backend .
 COPY vault_bridge.py /app/vault_bridge.py
 COPY render-start.sh /app/render-start.sh
+
+# Migration/ops scripts. Without this, scripts/cruz_migrate.py never reaches the
+# container and the migration has to be piped in over SSH.
+COPY scripts /app/scripts
 RUN chmod +x /app/render-start.sh
 
 EXPOSE 8080
