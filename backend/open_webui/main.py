@@ -2703,17 +2703,25 @@ async def get_manifest_json():
             'start_url': '/',
             'display': 'standalone',
             'background_color': '#343541',
+            # CRUZ BRAND PATCH: logo.png removed from the project; these point
+            # at the properly sized manifest icons that already ship alongside.
             'icons': [
                 {
-                    'src': '/static/logo.png',
+                    'src': '/static/web-app-manifest-192x192.png',
                     'type': 'image/png',
-                    'sizes': '500x500',
+                    'sizes': '192x192',
                     'purpose': 'any',
                 },
                 {
-                    'src': '/static/logo.png',
+                    'src': '/static/web-app-manifest-512x512.png',
                     'type': 'image/png',
-                    'sizes': '500x500',
+                    'sizes': '512x512',
+                    'purpose': 'any',
+                },
+                {
+                    'src': '/static/web-app-manifest-512x512.png',
+                    'type': 'image/png',
+                    'sizes': '512x512',
                     'purpose': 'maskable',
                 },
             ],

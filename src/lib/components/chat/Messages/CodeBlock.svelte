@@ -42,6 +42,46 @@
 
 	export let token;
 	export let lang = '';
+
+	// CRUZ BRAND PATCH: true when this block is rendered as a live chart inline
+	// (see the iframe further down). When it is, the source is suppressed --
+	// otherwise the reader gets a chart with a wall of HTML stacked beneath it,
+	// and "Expand" reveals code rather than enlarging the chart. Use the Preview
+	// button for a larger view.
+	$: cruzInlineArtifact =
+		['html', 'svg'].includes(lang) && (code.includes('</html>') || code.includes('</svg>'));
+
+	// SVG clips anything outside its viewBox, silently. Generated charts routinely
+	// place long axis labels just outside it, so text disappears with no error and
+	// it reads as a rendering bug. Prompting alone does not reliably prevent this,
+	// so the frame document is fixed up here instead: overflow:visible stops the
+	// clipping, and the padded, scrolling wrapper guarantees whatever spills out
+	// is still reachable.
+	const CRUZ_ARTIFACT_CSS = `
+<style>
+  html, body { margin:0; padding:0; background:transparent; overflow:visible; }
+  body { padding:14px 18px; box-sizing:border-box; }
+  svg { overflow: visible !important; max-width:100%; height:auto; display:block; }
+  .wrap, .container { max-width:100% !important; }
+</style>`;
+
+	$: cruzArtifactDoc = !cruzInlineArtifact
+		? ''
+		: code.includes('</head>')
+			? code.replace('</head>', `${CRUZ_ARTIFACT_CSS}</head>`)
+			: CRUZ_ARTIFACT_CSS + code;
+
+	let cruzArtifactFrame: HTMLIFrameElement;
+
+	const cruzFullscreen = () => {
+		const el: any = cruzArtifactFrame?.parentElement ?? cruzArtifactFrame;
+		if (!el) return;
+		if (document.fullscreenElement) {
+			document.exitFullscreen?.();
+		} else {
+			(el.requestFullscreen ?? el.webkitRequestFullscreen ?? el.msRequestFullscreen)?.call(el);
+		}
+	};
 	export let code = '';
 	export let attributes = {};
 
@@ -541,7 +581,9 @@
 			>
 				<div class=" pt-6.5 bg-white dark:bg-black"></div>
 
-				{#if !collapsed}
+				{#if cruzInlineArtifact}
+					<!-- CRUZ BRAND PATCH: chart renders below; source intentionally hidden. -->
+				{:else if !collapsed}
 					{#if edit}
 						<CodeEditor
 							value={code}
@@ -581,6 +623,43 @@
 					</div>
 				{/if}
 			</div>
+
+			<!--
+				CRUZ BRAND PATCH: render html/svg inline, in the conversation.
+				Upstream only offers "Preview", which opens the side artifact panel --
+				so a chart is either invisible or off to one side. Claude renders it in
+				the message flow, which is what people expect of a chart.
+
+				Gated on closing markup so a partially-streamed document does not
+				flicker on every token. sandbox="allow-scripts" WITHOUT
+				allow-same-origin is deliberate: scripts run, but the frame cannot
+				reach the parent document, cookies or session. Do not add
+				allow-same-origin here.
+			-->
+			{#if cruzInlineArtifact}
+				<div class="cruz-artifact-wrap relative">
+					<iframe
+						bind:this={cruzArtifactFrame}
+						title={$i18n.t('Preview')}
+						class="cruz-inline-artifact w-full border-0 bg-white dark:bg-black"
+						sandbox="allow-scripts"
+						srcdoc={cruzArtifactDoc}
+					></iframe>
+
+					<!--
+						Upstream's "Expand" only toggles the source, which is hidden for
+						artifacts -- so it appeared to do nothing. This puts the chart
+						itself into real fullscreen instead.
+					-->
+					<button
+						class="cruz-artifact-fullscreen absolute top-2 right-2 rounded-lg px-2 py-1 text-xs"
+						title={$i18n.t('Fullscreen')}
+						on:click={cruzFullscreen}
+					>
+						⤢
+					</button>
+				</div>
+			{/if}
 
 			{#if !collapsed}
 				<div

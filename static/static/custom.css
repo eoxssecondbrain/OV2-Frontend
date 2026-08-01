@@ -1,0 +1,321 @@
+/* Space Grotesk -- the marketing site's display face (--display), SIL Open Font
+   License, so self-hosting later is unrestricted. Imported here rather than in
+   app.html to keep the fork diff at zero. Weights match the site: 300-700. */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+/* ===========================================================================
+   Cruz branding overrides
+   ---------------------------------------------------------------------------
+   Loaded globally by src/app.html as /static/custom.css.
+
+   THIS FILE IS THE SOURCE OF TRUTH. Edit it here, in static/static/.
+
+   Do NOT edit backend/open_webui/static/ -- that directory is DERIVED. On every
+   startup config.py:108-113 empties it and re-copies build/static/ over the
+   top, so edits there are silently destroyed on the next boot. The chain is:
+
+     static/static/ --(npm run build)--> build/static/ --(startup)--> backend/open_webui/static/
+
+   So after changing anything here, run `npm run build` for the backend-served
+   path to pick it up. The vite dev server on :5173 reads static/ directly and
+   needs only a hard refresh.
+
+   These are CSS overrides rather than component edits on purpose -- this file
+   does not exist upstream, so it can never cause a merge conflict when
+   Open WebUI is updated. Prefer adding rules here over touching .svelte files.
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   Sidebar logo: hidden by request, so the product leads with its wordmark the
+   way Claude does. The anchor is collapsed too, otherwise it leaves an empty
+   ~34px square and the wordmark sits oddly indented.
+   To restore: delete both rules below.
+   --------------------------------------------------------------------------- */
+.sidebar-new-chat-icon {
+	display: none !important;
+}
+
+a:has(> .sidebar-new-chat-icon) {
+	width: 0 !important;
+	min-width: 0 !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   Wordmark: larger and tighter, leading the sidebar rather than sitting small
+   beside an icon.
+   --------------------------------------------------------------------------- */
+#sidebar-webui-name {
+	font-size: 1.375rem;
+	font-weight: 600;
+	letter-spacing: 0.005em;
+	line-height: 1.1;
+	padding-left: 0.25rem;
+}
+
+/* The splash screen now carries the Cruz mark rather than EOXS artwork, so it
+   is left visible. To suppress it:  #splash-screen img { display: none; } */
+
+/* ===========================================================================
+   Cruz accent layer
+   ---------------------------------------------------------------------------
+   The dark surfaces come from the remapped `gray` ramp in tailwind.config.js.
+   This section adds the violet accent from the marketing site, which Tailwind
+   cannot supply on its own because upstream hard-codes black/white for the
+   primary controls.
+   =========================================================================== */
+
+/* Exact tokens lifted from the marketing site's stylesheet. */
+:root {
+	--cruz-violet: #6c5ce7; /* --violet */
+	--cruz-violet-hover: #8b7bf0; /* --violet-lt */
+	--cruz-violet-soft: rgba(108, 92, 231, 0.32); /* --violet-soft */
+	--cruz-gold: #c9a961; /* --gold */
+	--cruz-hair: rgba(232, 232, 240, 0.1); /* --hair, hairline rules */
+}
+
+/* ---------------------------------------------------------------------------
+   Typography. The site's character comes as much from the typeface and its
+   tight heading tracking as from colour -- headings run -0.02 to -0.035em,
+   small caps labels run positive. Applied globally so the whole product picks
+   it up, not just headings.
+   --------------------------------------------------------------------------- */
+html,
+body,
+button,
+input,
+textarea,
+select {
+	font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	letter-spacing: -0.02em;
+}
+
+/* The sidebar wordmark, matching the site's letterspaced CRUZ lockup. */
+#sidebar-webui-name {
+	font-family: 'Space Grotesk', sans-serif;
+}
+
+/* Send button: upstream renders it black-on-light / white-on-dark. The site
+   leads with a violet CTA, so the primary action matches it. */
+#send-message-button {
+	background-color: var(--cruz-violet) !important;
+	color: #ffffff !important;
+	transition: background-color 0.15s ease;
+}
+
+#send-message-button:hover:not(:disabled) {
+	background-color: var(--cruz-violet-hover) !important;
+}
+
+#send-message-button svg {
+	color: #ffffff !important;
+	stroke: #ffffff !important;
+}
+
+/* Text selection picks up the brand rather than the browser default blue. */
+::selection {
+	background: var(--cruz-violet-soft);
+}
+
+/* Keyboard focus: scoped to actual controls only.
+   A blanket `:focus-visible` drew a hard violet rectangle around the whole
+   message-input container, which looked broken. Text fields keep their own
+   styling; only buttons and links get a ring, and only for keyboard users.
+   Do not widen this back to `*` -- and do not replace it with `outline: none`,
+   which would strip keyboard navigation entirely. */
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible,
+summary:focus-visible {
+	outline: 2px solid var(--cruz-violet);
+	outline-offset: 2px;
+	border-radius: 0.5rem;
+}
+
+/* Text inputs get a soft brand-tinted ring instead of a hard outline. */
+textarea:focus-visible,
+input[type='text']:focus-visible,
+input[type='search']:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 1px var(--cruz-violet-soft);
+}
+
+/* Scrollbars, so they recede into the surface instead of banding. */
+.dark ::-webkit-scrollbar-thumb {
+	background-color: #24242f;
+	border-radius: 8px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+	background-color: #303040;
+}
+
+::-webkit-scrollbar-thumb {
+	background-color: #d4d4e0;
+	border-radius: 8px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background-color: #b8b8c8;
+}
+
+::-webkit-scrollbar-track {
+	background-color: transparent;
+}
+
+/* ===========================================================================
+   Light mode
+   ---------------------------------------------------------------------------
+   The brand is dark-first, so light mode needs deliberate work or it reads as
+   unstyled. Two things do most of the lifting: a page field that is warmer than
+   the panels sitting on it (so cards read as raised rather than floating on
+   white-on-white), and borders with a violet undertone instead of neutral grey.
+   =========================================================================== */
+
+html:not(.dark) body {
+	background-color: #f5f5f9;
+}
+
+/* Violet-tinted separators. Neutral grey borders are the main reason a light
+   theme looks like a default theme. */
+html:not(.dark) .border-gray-50,
+html:not(.dark) .border-gray-100,
+html:not(.dark) .border-gray-200 {
+	border-color: #e3e3ec;
+}
+
+/* Selected chat / hovered rows pick up a hint of brand rather than flat grey. */
+html:not(.dark) .bg-gray-50:hover,
+html:not(.dark) .hover\:bg-gray-50:hover {
+	background-color: #eeeef6;
+}
+
+/* Secondary text: violet-grey rather than slate, matching the site's muted
+   copy. */
+html:not(.dark) .text-gray-500,
+html:not(.dark) .text-gray-600 {
+	color: #6e6e80;
+}
+
+/* ===========================================================================
+   Visible brand
+   ---------------------------------------------------------------------------
+   Softened whites and tinted borders are too subtle to register -- in light
+   mode the product still read as unbranded. These are the surfaces a user
+   actually looks at, so the violet shows up where it is noticed rather than
+   only in hover states.
+   =========================================================================== */
+
+/* User message bubble -- the most-repeated element on screen. Tinted rather
+   than solid violet, so long messages stay comfortable to read. */
+.user-message .rounded-3xl {
+	background-color: rgba(108, 92, 231, 0.09) !important;
+	border: 1px solid rgba(108, 92, 231, 0.16);
+}
+
+.dark .user-message .rounded-3xl {
+	background-color: rgba(108, 92, 231, 0.16) !important;
+	border-color: rgba(108, 92, 231, 0.22);
+}
+
+/* Links in assistant replies. */
+.markdown-prose a,
+.prose a {
+	color: var(--cruz-violet);
+	text-decoration-color: rgba(108, 92, 231, 0.4);
+}
+
+.dark .markdown-prose a,
+.dark .prose a {
+	color: var(--cruz-violet-hover);
+}
+
+/* Assistant avatar: a violet ring, echoing the orbit motif on the site. */
+.chat-assistant-avatar,
+img.rounded-full[alt='']:not(.user-message-profile-image) {
+	box-shadow: 0 0 0 1px rgba(108, 92, 231, 0.35);
+}
+
+/* Inline code and quoted spans pick up the brand instead of default red. */
+.markdown-prose code:not(pre code) {
+	color: var(--cruz-violet);
+	background-color: rgba(108, 92, 231, 0.08);
+	border-radius: 0.25rem;
+	padding: 0.1em 0.35em;
+}
+
+.dark .markdown-prose code:not(pre code) {
+	color: var(--cruz-violet-hover);
+	background-color: rgba(108, 92, 231, 0.14);
+}
+
+/* Inline artifact frame (see CRUZ BRAND PATCH in CodeBlock.svelte). Charts are
+   rendered in the conversation rather than only in the side panel. Height is
+   generous enough for a labelled chart without dominating the thread. */
+.cruz-inline-artifact {
+	height: 520px;
+	display: block;
+	border-radius: 1rem;
+	background: transparent;
+}
+
+/* Hide the code-block chrome (the "html" label plus Expand/Save/Copy/Preview)
+   for blocks rendered as charts. There is no source on show, so those controls
+   either did nothing or opened a duplicate of the chart in the side panel.
+   Targets the sticky header that sits as a sibling of the artifact wrapper. */
+div:has(> .cruz-artifact-wrap) > .sticky {
+	display: none !important;
+}
+
+/* Fullscreen control, sitting quietly on the chart until hovered. */
+.cruz-artifact-fullscreen {
+	background: rgba(20, 18, 31, 0.55);
+	color: #e8e8f0;
+	border: 1px solid rgba(232, 232, 240, 0.14);
+	opacity: 0;
+	transition: opacity 0.15s ease;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.cruz-artifact-wrap:hover .cruz-artifact-fullscreen {
+	opacity: 1;
+}
+
+.cruz-artifact-fullscreen:hover {
+	background: var(--cruz-violet);
+	border-color: var(--cruz-violet);
+}
+
+/* In fullscreen the wrapper becomes the viewport, so the frame must fill it. */
+.cruz-artifact-wrap:fullscreen {
+	background: #050507;
+	padding: 1rem;
+}
+
+.cruz-artifact-wrap:fullscreen .cruz-inline-artifact {
+	height: 100%;
+}
+
+@media (max-width: 640px) {
+	.cruz-inline-artifact {
+		height: 320px;
+	}
+}
+
+/* Sidebar section labels ("Folders", "Chats", "Previous 7 days") in the site's
+   letterspaced small-caps treatment. */
+#sidebar .text-xs.font-medium.text-gray-500,
+#sidebar .text-xs.text-gray-500 {
+	letter-spacing: 0.055em;
+	text-transform: uppercase;
+	font-size: 0.6875rem;
+}

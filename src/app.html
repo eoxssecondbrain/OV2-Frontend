@@ -28,7 +28,7 @@
 			name="viewport"
 			content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
 		/>
-		<meta name="theme-color" content="#171717" />
+		<meta name="theme-color" content="#050507" />
 		<meta name="robots" content="noindex,nofollow" />
 
 		<script src="/static/loader.js" defer crossorigin="use-credentials"></script>
@@ -47,12 +47,17 @@
 				const prefersDarkTheme = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
 				if (!localStorage?.theme) {
-					localStorage.theme = 'system';
+					// CRUZ BRAND PATCH: default to dark instead of following the OS.
+					// Upstream used 'system', so anyone whose machine is set to
+					// light saw the light theme on first load. Users can still
+					// change themes freely -- this only affects someone who has
+					// never picked one.
+					localStorage.theme = 'dark';
 				}
 
 				if (localStorage.theme === 'system') {
 					document.documentElement.classList.add(prefersDarkTheme ? 'dark' : 'light');
-					metaThemeColorTag.setAttribute('content', prefersDarkTheme ? '#171717' : '#ffffff');
+					metaThemeColorTag.setAttribute('content', prefersDarkTheme ? '#050507' : '#ffffff');
 				} else if (localStorage.theme === 'oled-dark') {
 					document.documentElement.style.setProperty('--color-gray-800', '#101010');
 					document.documentElement.style.setProperty('--color-gray-850', '#050505');
@@ -68,7 +73,7 @@
 					metaThemeColorTag.setAttribute('content', '#983724');
 				} else {
 					document.documentElement.classList.add('dark');
-					metaThemeColorTag.setAttribute('content', '#171717');
+					metaThemeColorTag.setAttribute('content', '#050507');
 				}
 
 				const preloadHref = document.documentElement.classList.contains('dark')
@@ -86,7 +91,7 @@
 						if (e.matches) {
 							document.documentElement.classList.add('dark');
 							document.documentElement.classList.remove('light');
-							metaThemeColorTag.setAttribute('content', '#171717');
+							metaThemeColorTag.setAttribute('content', '#050507');
 						} else {
 							document.documentElement.classList.add('light');
 							document.documentElement.classList.remove('dark');
@@ -196,11 +201,11 @@
 		}
 
 		#splash-screen {
-			background: #fff;
+			background: #f5f5f9;
 		}
 
 		html.dark #splash-screen {
-			background: #000;
+			background: #050507;
 		}
 
 		html.her #splash-screen {

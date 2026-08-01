@@ -79,6 +79,21 @@
 		}
 	};
 
+	// CRUZ BRAND PATCH: mirrors the fix in CodeBlock.svelte. SVG silently clips
+	// anything outside its viewBox, and generated charts routinely put long axis
+	// labels just past the edge -- text vanishes with no error and reads as a
+	// rendering bug. Applied here too so the panel and the inline view agree;
+	// otherwise the same chart looks different depending on where you open it.
+	const CRUZ_ARTIFACT_CSS = `
+<style>
+  html, body { overflow: visible; }
+  body { padding: 14px 18px; box-sizing: border-box; }
+  svg { overflow: visible !important; max-width: 100%; height: auto; }
+</style>`;
+
+	const cruzFixArtifact = (html: string): string =>
+		html.includes('</head>') ? html.replace('</head>', `${CRUZ_ARTIFACT_CSS}</head>`) : CRUZ_ARTIFACT_CSS + html;
+
 	const downloadArtifact = () => {
 		const blob = new Blob([contents[selectedContentIdx].content], { type: 'text/html' });
 		const url = URL.createObjectURL(blob);
@@ -246,9 +261,8 @@
 							<iframe
 								bind:this={iframeElement}
 								title="Content"
-								srcdoc={injectCsp(
-									contents[selectedContentIdx].content,
-									$config?.ui?.iframe_csp ?? ''
+								srcdoc={cruzFixArtifact(
+									injectCsp(contents[selectedContentIdx].content, $config?.ui?.iframe_csp ?? '')
 								)}
 								class="w-full border-0 h-full rounded-none"
 								sandbox="allow-scripts allow-downloads{($settings?.iframeSandboxAllowForms ?? false)

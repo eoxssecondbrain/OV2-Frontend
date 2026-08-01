@@ -120,7 +120,12 @@
 			if (modelSuggestions) {
 				_models = [
 					...$models
-						.filter((m) => !m?.direct)
+						// CRUZ BRAND PATCH: also respect meta.hidden, which the model
+						// Selector already honours. Without it, hidden base models stay
+						// mentionable here -- and mentioning one gives a bare model with
+						// no tools attached, so it answers vault questions with "I can't
+						// find anything" while looking like the assistant.
+						.filter((m) => !m?.direct && !(m?.info?.meta?.hidden ?? false))
 						.map((m) => ({ type: 'model', id: m.id, label: m.name, data: m }))
 				];
 			}
