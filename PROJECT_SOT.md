@@ -879,11 +879,45 @@ live database has **not** been written — that needs
 the local one included, since its prompt still carries the old
 `prefers-color-scheme` instruction.
 
-**Verified:** `middleware.py` parses; `add_or_update_system_message(...,
-append=True)` keeps the model's prompt first and inserts a system message when
-none exists; `CodeBlock.svelte` compiles clean under Svelte 5.56.0.
-**Not yet verified in a live chat** — needs a real "chart this" request against
-a Cruz model to confirm the model complies and the SVG renders.
+### Build trap: a literal `<style>` inside a script string
+
+The first version broke `npm run build`. Svelte's preprocessor scans the
+component **text** for style blocks, so the `<style>` tag inside the
+`cruzArtifactCss` template literal was handed to postcss, which rejected the
+`${ink}` interpolation: `CssSyntaxError: Unknown word ink`. The tag is now
+assembled (`'<' + 'style>'`) to stay out of that scan.
+
+Upstream's version survived only because its CSS was static and parseable — it
+was still being compiled into the component as a phantom style block.
+
+This was missed by a standalone `svelte.compile()` check, which does not run
+vite's preprocessing. **Only `npm run build` proves a Svelte change builds.** It
+was also nearly missed a second time: `npm run build 2>&1 | tail` reports the
+exit code of `tail`, not the build. Redirect to a file and check `$?`.
+
+### Verified locally, end to end (2026-08-05)
+
+Stack: bridges :9090 / :9091 / :9092 (the third started by hand — 7j gap still
+open), backend :8080 healthy, frontend rebuilt.
+
+| Check | Result |
+|---|---|
+| `npm run build` | exit 0, clean (the two "error" hits are filenames) |
+| New logic in the built bundle | `image/svg+xml` and the frame font stack present in `build/_app/immutable/` |
+| Migration applied to local DB | `4759 -> 5028` chars, all three models, COMMITTED |
+| **Live chat request to `cruz`** | ` ```html ` block, `<svg viewBox="0 0 900 500">`, 2 643 chars |
+| Block/shade characters in reply | **none** |
+| "I don't have a chart-rendering tool" | **absent** |
+| Renderer match on the real reply | `cruzInlineArtifact` → **true**, prepend path (no `<head>`) |
+| Frame CSS ordering | stylesheet precedes `<svg>` in both light and dark composition |
+| Text-colour collision | 16 `<text>` elements, 9 on `currentColor`, **0** with a hard-coded hex fill — nothing of the model's is overridden; the hex fills are on bars and legend swatches |
+
+The database backup taken before the migration is in the session scratchpad as
+`webui.db.bak-before-chartfix`.
+
+**Still not verified:** the chart as pixels in a browser. Everything up to the
+composed frame document is confirmed; the final visual needs the UI opened by
+hand. Render and the tunnel instance are untouched.
 
 ---
 

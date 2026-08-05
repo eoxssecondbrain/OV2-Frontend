@@ -92,8 +92,18 @@
 	// than 'svg text', and hence the stylesheet goes in at the TOP of <head>:
 	// injecting it before </head> would have placed it after the chart's own
 	// styles and silently overruled them.
+	//
+	// The tag is assembled rather than written literally, and that is load-bearing:
+	// svelte's preprocessor scans the component TEXT for style blocks, so a literal
+	// <style> here is handed to postcss, which rejects the ${ink} interpolation with
+	// "Unknown word ink" and fails `npm run build`. Splitting it keeps this string
+	// out of that scan. (Upstream got away with a literal tag only because its CSS
+	// happened to be static and parseable -- it was still being compiled into the
+	// component as a phantom style block.)
+	const STYLE_OPEN = '<' + 'style>';
+	const STYLE_CLOSE = '<' + '/style>';
 	const cruzArtifactCss = (ink: string) => `
-<style>
+${STYLE_OPEN}
   html, body { margin:0; padding:0; background:transparent; overflow:visible; color:${ink}; }
   body { padding:14px 18px; box-sizing:border-box;
          font-family:'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
@@ -101,7 +111,7 @@
   text { fill: ${ink}; }
   .grid, .axis { stroke: ${ink}; opacity: 0.18; }
   .wrap, .container { max-width:100% !important; }
-</style>`;
+${STYLE_CLOSE}`;
 
 	$: cruzArtifactDoc = !cruzInlineArtifact
 		? ''
