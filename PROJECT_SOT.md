@@ -4,7 +4,7 @@ Authoritative state of the EOXS AI project. Governed by `BUILDING_GUIDELINES.md`
 Every code change, config change, decision, and checkpoint is recorded here in
 the session it happens. If this file disagrees with reality, this file is wrong.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-04
 
 ---
 
@@ -485,10 +485,12 @@ returns `"name": "Cruz"` and the PWA manifest reports Cruz.
 `src/`, almost all admin-settings help text, the About dialog, and community
 sync copy. Left alone because they churn upstream and rewriting them multiplies
 merge conflicts. Revisit before shipping to a client.
+→ **Superseded 2026-08-04 by §7k** — all of these were removed.
 
 **Assets not yet replaced:** `static/favicon.png`, `static/static/{favicon.*,
 logo.png, splash.png, splash-dark.png, apple-touch-icon.png}`. Swapping files
 needs no code change and no merge risk.
+→ **Done 2026-08-02** (PNG/ICO set), **`favicon.svg` missed until §7k**.
 
 ## 7h. Demo hosting via Cloudflare tunnel (2026-07-31)
 
@@ -648,6 +650,138 @@ disabling the `Cruz Demo Stack` task). Running both means two divergent
 databases, with chats splitting by whichever URL a user happened to open and no
 way to merge them afterwards.
 
+---
+
+## 7j. Local dev stack run + `start-dev.sh` gap (2026-08-04)
+
+Brought the full local stack up via `bash start-dev.sh` + `npm run dev`.
+Verified running, not assumed:
+
+| Check | Result |
+|---|---|
+| `GET :8080/health` | `{"status":true}` |
+| `GET :8080/api/config` | `name: "Cruz"`, version `0.11.0`, signup disabled |
+| `GET :8080/static/custom.css` | 200, 11 203 bytes (Cruz palette serving) |
+| Frontend `:5173` SSR | 200, `<title>Cruz</title>`, references `custom.css` |
+| MCP `:9090` eoxs-vault | initialize OK → **21 tools** |
+| MCP `:9091` threads-ov | initialize OK → **15 tools** |
+| MCP `:9092` eoxs-db | initialize OK → **20 tools** |
+
+### Gap found: `start-dev.sh` starts two bridges, the DB registers three
+
+`config.tool_server.connections` in `backend/data/webui.db` lists three
+**enabled** MCP servers — `eoxs-vault` (:9090), `threads-ov` (:9091), and
+`eoxs-db` (:9092). `start-dev.sh` launches only :9090 and :9091, so in local
+dev the `eoxs-db` server is registered-but-dead: its 20 tools fail at call
+time rather than being absent, which is the worse failure mode.
+
+`render-start.sh` already supervises :9092 correctly (guarded on `DB_MCP_URL`),
+and `DB_MCP_URL` is present in `.env` — so this is purely a dev-launcher
+omission, not a missing credential. Production on Render is unaffected.
+
+**Fix required:** port the `render-start.sh` :9092 block into `start-dev.sh`
+(and add 9092 to its port-cleanup loop and to `stop-cruz.sh`). Started by hand
+this session as a stopgap; not yet committed.
+
+Also noted: the first `curl` to `:5173` after boot can exceed 10 s — Vite
+compiles the SSR entry on demand. Not a fault; allow a long timeout before
+calling it down.
+
+---
+
+## 7k. Full de-branding: "Open WebUI" removed product-wide (2026-08-04)
+
+Requirement: the product ships as **Cruz**. No "Open WebUI" string may appear
+anywhere a user or admin can see. This supersedes §7g's decision to leave ~49
+admin strings alone — that trade (fewer merge conflicts) was overridden.
+
+**Licence position unchanged.** Still permitted under clause 4(i) (≤50 end users
+per rolling 30 days), same condition as §7g. `LICENSE`, `LICENSE_HISTORY` and
+`LICENSE_NOTICE` are **untouched**, which satisfies clauses 1 and 2 (the
+copyright notice is retained in the distribution). **If the 50-user threshold is
+ever crossed without an enterprise licence, this entire change must be
+reverted along with §7g's.**
+
+### Scope changed: 153 files
+
+| Area | Change |
+|---|---|
+| `src/` (52 files) | All 124 occurrences resolved — user-visible text → "Cruz"; community/docs links removed |
+| `src/lib/i18n/locales/` (63 files) | 1 575 occurrences. Replaced in **keys and values together** so i18next lookups still resolve; `{{OPEN_WEBUI_VERSION}}` → `{{CRUZ_VERSION}}` consistently on both sides |
+| `backend/open_webui/` (33 files) | All user-visible strings, outbound headers, log output, docstrings and comments |
+| Assets / manifests | `favicon.svg`, `site.webmanifest` |
+| Package identity | `package.json` name, `pyproject.toml` name + console script (`open-webui` → `cruz`) |
+
+### Features removed, not just renamed
+
+These were not text problems — they were live integrations with Open WebUI's
+own services, which would have leaked the origin at runtime:
+
+| Removed | Why |
+|---|---|
+| **Community sharing end to end** — share-to-community handlers in Tools / Prompts / Models / Functions / Feedbacks / ShareChatModal, the four `Share` menu items, the `CommunityDiscover` component, and the `ENABLE_COMMUNITY_SHARING` admin toggle | Every path posted content to `openwebui.com` and toasted "Redirecting you to Open WebUI Community" |
+| **Inbound `postMessage` handlers** trusting `https://openwebui.com` in 4 create pages + `+layout.svelte` | Third-party origin trusted to prefill forms. Dead once the outbound links went, and a trust boundary worth closing regardless |
+| **`SyncStatsModal`** (usage-stats sync to the community leaderboard) | Sent aggregated usage to Open WebUI |
+| **`ChangelogModal` + "See what's new"** (both entry points) and the "What's New on login" setting | The modal rendered **upstream's `CHANGELOG.md` — 2 212 brand references** — into the UI for every user. Renaming it would have fabricated a Cruz release history, so the surface was removed instead. `/api/changelog` now returns `{}` |
+| **Version update check** (`/api/version/updates`) | Called `api.github.com/repos/open-webui/open-webui/releases/latest` and offered upstream's version as an update. Now reports installed = latest, no outbound call |
+| **Legacy `CUSTOM_NAME` branding fetch** (`config.py`) | Pulled name/logo/splash from `api.openwebui.com` and **overwrote the local favicon**. Cruz now makes no calls to Open WebUI services |
+| **`HTTP-Referer: https://openwebui.com/`** on OpenRouter requests | Identified the app as Open WebUI to a third party. `X-Title` now sends `Cruz` |
+| Sponsorship banner (>50 users), enterprise-licence upsells, docs/Discord/X/GitHub links, "Help us translate Open WebUI!" | Brand and outbound links |
+
+### Asset bug found and fixed
+
+`static/static/favicon.svg` was **byte-identical to the pre-Cruz icon** and is
+the *first* `<link rel="icon">` in `app.html` — so browsers preferring SVG
+favicons showed the old logo in the tab, despite the PNG set having been
+replaced on 2026-08-02. Regenerated from `favicon.png`; original kept as
+`favicon.eoxs-backup.svg`. Also `site.webmanifest` still had
+`"short_name": "WebUI"` (the PWA home-screen name) → `Cruz`.
+
+### Deliberately kept — internal identifiers, not branding
+
+Changing these breaks working code for no user-visible gain:
+
+| Kept | Reason |
+|---|---|
+| `open_webui` Python package path (incl. `from open_webui.utils.misc import …` in the plugin boilerplate) | Real import path; renaming breaks every plugin |
+| `open_webui:code_interpreter` | Structured-output type agreed with the backend |
+| `application/x-open-webui-drag` | Internal drag-and-drop MIME type |
+| `required_open_webui_version` | Plugin manifest key; the *message* around it now says Cruz |
+| `ghcr.io/open-webui/open-terminal:latest` | Real container image name |
+| Licence-server URLs in `utils/auth.py` | Only reached when a licence key is set (none is). Removing them would break enterprise licensing if ever purchased |
+| 3 comments in `env.py` / `config.py` naming the licence clause | Deliberate — they document the compliance condition for reverting |
+
+### Verified, not assumed (2026-08-04)
+
+| Check | Result |
+|---|---|
+| `npm run build` | Succeeds |
+| Backend import + startup | Clean; banner prints `Cruz v0.11.0` |
+| Python syntax across `backend/open_webui` | 0 errors |
+| All 63 locale JSON files parse | 0 errors |
+| `GET /api/config` | `name: "Cruz"`, **0 brand hits in the whole payload** |
+| `GET /` served HTML | `<title>Cruz</title>`, 0 brand hits |
+| `GET /openapi.json` | `info.title: "Cruz"` |
+| `GET /api/changelog` | `{}` |
+| `build/` output | **0 occurrences** of `Open WebUI` / `OpenWebUI` / `openwebui.com` |
+
+Remaining matches in `build/` are only the kept identifiers above
+(`open_webui_version`, `open-webui-drag`, `open_webui:code_interpreter`).
+
+Verification ran against a throwaway backend on **:8099** so the live stack on
+:8080 was never disturbed; that instance has been stopped.
+
+**Action required before this is visible:** the backend copies `build/static/`
+into `backend/open_webui/static/` **at startup only**, so the running :8080
+process must be restarted to serve the rebuilt frontend.
+
+**Not done (out of scope, repo-internal, no runtime surface):** `README.md`,
+`CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTOR_LICENSE_AGREEMENT`,
+`docs/SECURITY.md`, `banner.png`, `demo.png`. `CHANGELOG.md` must stay on disk —
+`env.py` still reads it at import — but nothing renders it any more.
+
+---
+
 ## 8. Next steps
 
 1. **Verify answer quality in the UI** with both models on identical questions.
@@ -689,7 +823,11 @@ npm run dev            # :5173
 # MCP bridges (temporary, until the vault servers serve streamable HTTP)
 VAULT_MCP_URL="<vault sse url>"   VAULT_BRIDGE_PORT=9090 python vault_bridge.py
 VAULT_MCP_URL="<threads sse url>" VAULT_BRIDGE_PORT=9091 python vault_bridge.py
+VAULT_MCP_URL="<db sse url>"      VAULT_BRIDGE_PORT=9092 python vault_bridge.py
 ```
+
+`start-dev.sh` launches only the first two bridges; the `:9092` one must be
+started by hand until that is fixed — see 7j.
 
 **Health checks**
 - Backend: `GET http://127.0.0.1:8080/health` → `{"status":true}`
