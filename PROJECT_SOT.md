@@ -782,6 +782,111 @@ process must be restarted to serve the rebuilt frontend.
 
 ---
 
+## 7l. Charts actually render (2026-08-05)
+
+**Symptom.** "Show me this in graphical representation" produced four collapsed
+code blocks reading *"17 hidden lines"*, above the model's own line: *"Since I
+don't have a chart-rendering tool here, here's a text-based visual
+representation."* No chart appeared.
+
+**Root cause — it is a deployment gap, not a missing feature.** The Cruz models
+in the local database already carry a thorough charting section in their own
+system prompt (4 760 chars: "never draw charts with text", emit one
+self-contained ` ```html ` block, viewBox sizing, 200px left margin for long
+client names, the brand palette). Checked directly:
+
+```
+cruz       system_prompt=4760 chars  keywords=[chart, graph, svg, plot, visual, ascii]
+cruz-pro   system_prompt=4760 chars  (same)
+cruz-lite  system_prompt=4760 chars  (same)
+```
+
+The screenshotted chat is **not in the local database** (21 chats, no match),
+so it came from another instance — Render or the tunnel demo. Those are built
+from the branch, and `scripts/cruz_migrate.py` **deliberately does not migrate
+system prompts** (7j). A Cruz model there has an *empty* prompt, so it had never
+been told the renderer exists: hence "Since I don't have a chart-rendering tool
+here" and bars made of block characters. It works on the dev box and fails on
+every deployed instance.
+
+**Three fixes:**
+
+| # | Cause | Fix |
+|---|---|---|
+| 1 | The charting instruction is DB-only, and the DB is not carried by the branch | `CRUZ_CHART_DIRECTIVE` in `utils/middleware.py`, appended to the system prompt in `process_chat_payload` |
+| 2 | `cruzInlineArtifact` matched only ` ```html ` / ` ```svg `. An SVG fenced as `xml` or untagged fell through to a normal code block | Match on closing markup (`</svg>`, `</html>`) across a widened language list including the empty fence |
+| 3 | Chart text colour was undefined when the model set none | Frame supplies a themed default that a `fill` attribute cannot beat |
+
+**The code directive is a floor, not a replacement.** It states only what must
+hold on every instance — html/svg renders inline, never draw with text, keep
+inside the viewBox — and is worded to agree with the database prompt rather than
+compete with it. The layout and palette detail stays in the model prompt where
+it can be tuned without a deploy. ~190 tokens on every chat request, accepted.
+
+**The theme trap.** The artifact iframe is `sandbox="allow-scripts"` without
+`allow-same-origin`, so `prefers-color-scheme` inside it follows the **OS**,
+while the frame's own background (`bg-white dark:bg-black`) follows the **app**
+theme. Those disagree for anyone on a light-themed machine — Cruz defaults to
+dark (7g) — which would have rendered dark text on a black background: an
+invisible chart with no error, the exact failure class 7g's `overflow:visible`
+fix already addressed once. So the ink is resolved from
+`documentElement.classList.contains('dark')` and injected into the frame CSS.
+Read from the class rather than the theme name because `system` only resolves to
+a class at runtime, and the class is what colours the frame.
+
+The frame rule is `text`, not `svg text`, and it is injected at the **top** of
+`<head>` rather than before `</head>`. Both choices matter: a `fill="..."`
+presentation attribute loses to any author stylesheet, so a hard-coded dark
+label still gets themed and cannot vanish — but a chart that themes itself with
+the `prefers-color-scheme` query the model prompt asks for declares `text` at
+equal specificity *later* in the document and therefore still wins. The first
+attempt used `svg text` injected before `</head>`, which would have silently
+overruled every correctly themed chart.
+
+**The prompt now lives in git.** This was the actual defect — a chart bug was
+only its symptom. `backend/open_webui/prompts/cruz_system.md` holds the Cruz
+system prompt verbatim (all three models shared one identical copy,
+sha `bd8167d33e41`), and `cruz_migrate.py` step [6] writes it to `cruz`,
+`cruz-pro` and `cruz-lite` on every run.
+
+It sits under `backend/` rather than a top-level `prompts/` because the runtime
+image copies only `build/`, `package.json`, `CHANGELOG.md` and `backend/` —
+`scripts/` and anything else is unreachable inside the container.
+
+One behavioural change to the prompt itself: the chart section no longer says
+"use a `prefers-color-scheme` media query" — it now tells the model to leave
+text colour to the frame, which resolves the OS-vs-app-theme split described
+above. Everything else is byte-identical.
+
+**Direction of authority is now reversed, and it is a trap.** The file
+overwrites the database, so a prompt edited in Workspace → Models is silently
+lost on the next migration run. The script says so on every dry run.
+
+**Verified:** dry run reports `4759 -> 5028 chars` for all three models; applied
+against a copy of `webui.db`, then re-run → `already current` for all three
+(idempotent); `function_calling`, `reasoning_effort` and `stream_options`
+survive the write; the vault-search and 200px-margin sections are intact. The
+live database has **not** been written — that needs
+`python scripts/cruz_migrate.py --apply`.
+
+**Files:** `backend/open_webui/utils/middleware.py`,
+`src/lib/components/chat/Messages/CodeBlock.svelte` (both marked
+`CRUZ BRAND PATCH`), `backend/open_webui/prompts/cruz_system.md` (new),
+`scripts/cruz_migrate.py`.
+
+**To deploy:** `npm run build`, restart the backend, then
+`python scripts/cruz_migrate.py --apply` against each instance's database —
+the local one included, since its prompt still carries the old
+`prefers-color-scheme` instruction.
+
+**Verified:** `middleware.py` parses; `add_or_update_system_message(...,
+append=True)` keeps the model's prompt first and inserts a system message when
+none exists; `CodeBlock.svelte` compiles clean under Svelte 5.56.0.
+**Not yet verified in a live chat** — needs a real "chart this" request against
+a Cruz model to confirm the model complies and the SVG renders.
+
+---
+
 ## 8. Next steps
 
 1. **Verify answer quality in the UI** with both models on identical questions.

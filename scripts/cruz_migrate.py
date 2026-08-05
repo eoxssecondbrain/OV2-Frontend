@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Apply the Cruz configuration to an Open WebUI database.
 
-None of the Cruz work below lives in git -- it is all database state: model
-names and ids, hidden base models, system prompts, tool-server registration,
-prompt suggestions and per-user settings. Deploying the branch does not carry
-any of it. This script does.
+None of the Cruz work below lives in git as configuration -- it is all database
+state: model names and ids, hidden base models, the system prompt, tool-server
+registration, prompt suggestions and per-user settings. Deploying the branch
+does not carry any of it. This script does.
+
+The system prompt is the exception that proves the point: it was left out of an
+earlier version of this script, so deployed instances ran Cruz with an empty
+prompt and answered chart requests with ASCII bars (SOT 7l). It is now read from
+backend/open_webui/prompts/cruz_system.md and written on every run.
 
     python scripts/cruz_migrate.py                       # local, dry run
     python scripts/cruz_migrate.py --apply
@@ -25,8 +30,20 @@ import sqlite3
 import sys
 import time
 import uuid
+from pathlib import Path
 
 HAIKU = 'claude-haiku-4-5-20251001'
+
+# The Cruz system prompt used to be database-only, which is precisely how a
+# deployed instance ended up with an empty prompt and answered a chart request
+# with "I don't have a chart-rendering tool here" (SOT 7l). It now lives in the
+# repo and this script writes it out.
+#
+# It sits under backend/open_webui/ rather than a top-level prompts/ directory
+# because the runtime image only copies build/, package.json, CHANGELOG.md and
+# backend/ -- anything else is unreachable from inside the container.
+SYSTEM_PROMPT_FILE = Path(__file__).resolve().parent.parent / 'backend' / 'open_webui' / 'prompts' / 'cruz_system.md'
+PROMPTED_MODELS = ['cruz', 'cruz-pro', 'cruz-lite']
 
 RENAMES = [  # longest first, so the -opus suffix is not eaten by the shorter key
     ('eoxs-vault-assistant-opus', 'cruz-pro', 'Cruz Pro'),
@@ -195,13 +212,34 @@ def _run(c):
             c.execute('update model set meta=? where id=?', (json.dumps(m), mid))
             note(f'{mid} attached to eoxs-db')
 
-    print('\n[6] prompt suggestions and arena')
+    print('\n[6] system prompt')
+    if not SYSTEM_PROMPT_FILE.exists():
+        note(f'SKIPPED -- {SYSTEM_PROMPT_FILE} not found')
+        note('  models keep whatever prompt they already have; charts may fall back to text')
+    else:
+        prompt = SYSTEM_PROMPT_FILE.read_text(encoding='utf-8').strip()
+        for mid in PROMPTED_MODELS:
+            row = list(c.execute('select params from model where id=?', (mid,)))
+            if not row:
+                continue
+            p = jload(row[0][0], {})
+            current = (p.get('system') or '').strip()
+            if current == prompt:
+                note(f'{mid} already current ({len(prompt)} chars)')
+                continue
+            p['system'] = prompt
+            c.execute('update model set params=? where id=?', (json.dumps(p), mid))
+            # Loud, because this overwrites hand-tuning done in the admin UI.
+            note(f'{mid} prompt {len(current)} -> {len(prompt)} chars'
+                 + ('  (was EMPTY)' if not current else '  (OVERWRITES the database copy)'))
+
+    print('\n[7] prompt suggestions and arena')
     c.execute("update config set value=? where key='ui.prompt_suggestions'", (json.dumps(SUGGESTIONS),))
     note(f'{len(SUGGESTIONS)} executive prompts')
     if c.execute("update config set value=? where key='evaluation.arena.enable'", (json.dumps(False),)).rowcount:
         note('arena model disabled')
 
-    print('\n[7] per-user settings')
+    print('\n[8] per-user settings')
     for uid, email, s in list(c.execute('select id,email,settings from user')):
         d = jload(s, {})
         if not isinstance(d, dict):
@@ -213,7 +251,7 @@ def _run(c):
         c.execute('update user set settings=? where id=?', (json.dumps(d), uid))
         note(f'{email}')
 
-    print('\n[8] final model visibility')
+    print('\n[9] final model visibility')
     for i, n, m, a in c.execute('select id,name,meta,is_active from model order by is_active desc, id'):
         hidden = jload(m, {}).get('hidden')
         state = 'VISIBLE' if (a and not hidden) else ('hidden' if a else 'inactive')
@@ -228,5 +266,6 @@ if __name__ == '__main__':
     print(f'database: {a.db}')
     migrate(a.db, a.apply)
     if not a.apply:
-        print('\nNOTE: system prompts are NOT migrated by this script -- they are long and')
-        print('editorial. Copy them from Workspace -> Models, or export/import the model.')
+        print(f'\nNOTE: the system prompt comes from {SYSTEM_PROMPT_FILE.name} and OVERWRITES the')
+        print('database copy. Edit that file, not Workspace -> Models -- changes made in the')
+        print('admin UI are lost the next time this runs.')

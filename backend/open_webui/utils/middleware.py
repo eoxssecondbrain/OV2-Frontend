@@ -142,6 +142,39 @@ logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 
 
+# CRUZ BRAND PATCH: a floor for chart rendering, not the whole instruction.
+#
+# The Cruz models already carry a much richer charting section in their own
+# system prompt -- viewBox sizing, left-margin rules for long client names, the
+# brand palette. But that prompt is database state, and scripts/cruz_migrate.py
+# deliberately does not migrate it. Any instance built from the branch alone
+# therefore has a Cruz model with an EMPTY system prompt, which is how a chart
+# request came back as "Since I don't have a chart-rendering tool here" plus
+# bars drawn from block characters.
+#
+# So this is the minimum that must hold everywhere, worded to agree with the
+# database prompt rather than compete with it: html/svg renders inline, never
+# draw with text. The detailed layout and palette rules stay in the model
+# prompt, where they can be tuned without a deploy.
+#
+# Appended after the model, user and folder prompts so any of them can still
+# override it. Roughly 190 tokens on every chat request.
+CRUZ_CHART_DIRECTIVE = """<chart_rendering>
+This interface renders html and svg code blocks inline in the conversation, as
+live artifacts. When asked for a chart, graph, plot, or any visual
+representation of data, reply with ONE self-contained ```html or ```svg block
+that draws it. Never build a chart from ASCII, block characters, or
+space-aligned columns, and never say you cannot render charts.
+
+- Everything inline: no external scripts, stylesheets, fonts, or images.
+- Set an explicit viewBox and keep every element, axis labels included, inside
+  it -- anything outside it is silently clipped.
+- Keep text legible on both light and dark backgrounds. The frame supplies a
+  readable default colour if you set none.
+- Label the axes, state units, and keep commentary outside the block.
+</chart_rendering>"""
+
+
 async def publish_chat_finished_event(
     request: Request, user: UserModel, metadata: dict, title: str, content: str, output: list | None = None
 ):
@@ -2392,6 +2425,12 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             )  # Required to handle system prompt variables
         except Exception:
             pass
+
+    # CRUZ BRAND PATCH: teach the model that charts render here. Appended last so
+    # the model's own prompt still reads first. See CRUZ_CHART_DIRECTIVE above.
+    form_data['messages'] = add_or_update_system_message(
+        CRUZ_CHART_DIRECTIVE, form_data.get('messages', []), append=True
+    )
 
     form_data = await convert_url_images_to_base64(form_data, user=user)
 

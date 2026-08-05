@@ -2,7 +2,7 @@
 	import hljs from 'highlight.js';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount, tick, onDestroy } from 'svelte';
-	import { config, pyodideWorker as pyodideWorkerStore } from '$lib/stores';
+	import { config, theme, pyodideWorker as pyodideWorkerStore } from '$lib/stores';
 
 	import { createPyodideWorker } from '$lib/pyodide/createPyodideWorker';
 	import { executeCode } from '$lib/apis/utils';
@@ -48,8 +48,33 @@
 	// otherwise the reader gets a chart with a wall of HTML stacked beneath it,
 	// and "Expand" reveals code rather than enlarging the chart. Use the Preview
 	// button for a larger view.
+	//
+	// Matched on the closing markup rather than the fence language alone: models
+	// label SVG as svg, xml, svg+xml or nothing at all, and an unrecognised label
+	// meant the chart silently fell back to a collapsed code block. The language
+	// list still gates it so that a *program* which happens to print '</svg>'
+	// keeps its source and its Run button.
+	const CRUZ_ARTIFACT_LANGS = ['', 'html', 'svg', 'xml', 'svg+xml', 'image/svg+xml'];
 	$: cruzInlineArtifact =
-		['html', 'svg'].includes(lang) && (code.includes('</html>') || code.includes('</svg>'));
+		CRUZ_ARTIFACT_LANGS.includes((lang ?? '').toLowerCase()) &&
+		(code.includes('</html>') || code.includes('</svg>'));
+
+	// The frame is sandboxed, so prefers-color-scheme inside it follows the OS
+	// while the frame's own background follows the app theme (bg-white
+	// dark:bg-black, below). Those two disagree on a light-themed machine running
+	// Cruz in dark mode, which rendered dark text on a black background -- an
+	// invisible chart with no error. The app theme is the one that colours the
+	// frame, so it is the one that decides the ink. Read from the document rather
+	// than from the theme name because 'system' resolves to a class at runtime,
+	// and because the class is literally what drives the frame's background.
+	// $theme is passed in only so this recomputes when the user switches themes;
+	// both theme setters apply the class synchronously, so it is already in place
+	// by the time this reactive statement flushes.
+	const cruzInk = (_theme: string) =>
+		typeof document !== 'undefined' && !document.documentElement.classList.contains('dark')
+			? '#3A3A46'
+			: '#E8E8F0';
+	$: cruzArtifactInk = cruzInk($theme);
 
 	// SVG clips anything outside its viewBox, silently. Generated charts routinely
 	// place long axis labels just outside it, so text disappears with no error and
@@ -57,19 +82,32 @@
 	// so the frame document is fixed up here instead: overflow:visible stops the
 	// clipping, and the padded, scrolling wrapper guarantees whatever spills out
 	// is still reachable.
-	const CRUZ_ARTIFACT_CSS = `
+	//
+	// The text rule is a floor, not an override, and its weight is chosen with care.
+	// A fill="..." presentation attribute loses to any author stylesheet, so a
+	// hard-coded dark label still gets themed and cannot vanish against the frame.
+	// A chart that themes itself -- which the model prompt asks for, via a
+	// prefers-color-scheme media query -- declares 'text' at the same specificity
+	// but later in the document, so its own colours win. Hence bare 'text' rather
+	// than 'svg text', and hence the stylesheet goes in at the TOP of <head>:
+	// injecting it before </head> would have placed it after the chart's own
+	// styles and silently overruled them.
+	const cruzArtifactCss = (ink: string) => `
 <style>
-  html, body { margin:0; padding:0; background:transparent; overflow:visible; }
-  body { padding:14px 18px; box-sizing:border-box; }
+  html, body { margin:0; padding:0; background:transparent; overflow:visible; color:${ink}; }
+  body { padding:14px 18px; box-sizing:border-box;
+         font-family:'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
   svg { overflow: visible !important; max-width:100%; height:auto; display:block; }
+  text { fill: ${ink}; }
+  .grid, .axis { stroke: ${ink}; opacity: 0.18; }
   .wrap, .container { max-width:100% !important; }
 </style>`;
 
 	$: cruzArtifactDoc = !cruzInlineArtifact
 		? ''
-		: code.includes('</head>')
-			? code.replace('</head>', `${CRUZ_ARTIFACT_CSS}</head>`)
-			: CRUZ_ARTIFACT_CSS + code;
+		: code.includes('<head>')
+			? code.replace('<head>', `<head>${cruzArtifactCss(cruzArtifactInk)}`)
+			: cruzArtifactCss(cruzArtifactInk) + code;
 
 	let cruzArtifactFrame: HTMLIFrameElement;
 
@@ -559,7 +597,9 @@
 						on:click={copyCode}>{copied ? $i18n.t('Copied') : $i18n.t('Copy')}</button
 					>
 
-					{#if preview && ['html', 'svg'].includes(lang)}
+					<!-- CRUZ BRAND PATCH: same widened match as the inline render, so an
+					     SVG fenced as xml (or unfenced) still offers the side panel. -->
+					{#if preview && (cruzInlineArtifact || ['html', 'svg'].includes(lang))}
 						<button
 							class="flex gap-1 items-center run-code-button bg-none border-none transition rounded-md px-1.5 py-0.5 bg-white dark:bg-black"
 							on:click={previewCode}
