@@ -49,5 +49,19 @@ services:
       # Database-backed vault, bridged on :9092 and registered as
       # server:mcp:eoxs-db. Required if any model is attached to that server --
       # without it the tools are reachable in config but dead at runtime.
+      #
+      # This is the FULL corpus (serverInfo eoxs-wiki-db-full). Do not point it
+      # at the general endpoint -- see USERS_MCP_URL below.
       - key: DB_MCP_URL
+        sync: false
+
+      # General-scope vault: the same corpus with sensitive material removed,
+      # for ordinary users. Bridged on :9093, registered as
+      # server:mcp:eoxs-users.
+      #
+      # Must be the endpoint whose serverInfo is eoxs-wiki-db-GENERAL. It and
+      # the -full endpoint above differ only in row counts -- same 20 tools,
+      # same version -- so a swapped pair exposes unredacted data silently.
+      # Verify with a get_index call after any change (PROJECT_SOT.md 7m).
+      - key: USERS_MCP_URL
         sync: false
