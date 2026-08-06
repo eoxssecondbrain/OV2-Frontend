@@ -1041,6 +1041,71 @@ instead of a path secret; then bridges and env vars both go away.
 
 ---
 
+## 7n. Deploy-branch trap, and chart label collisions (2026-08-06)
+
+**The branch trap — cost a full debug cycle.** PR #2 was opened from the fork
+`ijassandhu/CRUZ-EOXS` and GitHub defaulted its base to the *parent repo's
+default branch*, so it merged into `eoxssecondbrain/OV2-Frontend:main`. Render
+builds `deploy/render` (`render.yaml`, DEPLOY-RENDER.md 2). `main` is not that
+branch, so nothing shipped: `USERS_MCP_URL` was set correctly and the
+`:9093` connection was configured correctly, but `render-start.sh` on the
+deployed image had **zero** occurrences of `9093`. The "Connection failed" was
+accurate — nothing was listening. The 12:30 "deploy" was the old image
+restarting because an env var was saved, not a new build.
+
+Fixed by fast-forwarding (`deploy/render` was a direct ancestor of `main`):
+
+    git push upstream upstream/main:deploy/render     # 230c8b0c3 -> 5cf12fb9f
+
+**Rule:** when opening a PR from the fork, set the base to `deploy/render`
+explicitly. GitHub will keep defaulting to `main`, and a merge to `main` never
+deploys. Verify with
+`git show upstream/deploy/render:render-start.sh | grep <port>` before
+debugging anything runtime.
+
+**Chart rendering confirmed live.** 7l's outstanding item is closed: a real
+chart rendered as SVG in the browser. No block characters, no text fallback.
+
+**But the layout collides.** Observed on an EOXS-headcount chart, four distinct
+defects, each matching a known anti-pattern:
+
+| Defect | Rule it broke |
+|---|---|
+| Two rows of x labels (`2019 2020 2024 2025 2026` over `2023 2024 2025`) — bars and line drawn on different category sets | Two scales on one plot; alignment is arbitrary and invents a trend |
+| Callouts overlapping the line, the bars and each other | Annotations placed without collision checks |
+| A value on every bar *and* every line point | "A number on every data point" — goes unread |
+| `"3-person" (2019…)` clipped at x=0; source line clipped at x=900 and running under the legend | No reserved bands; no edge-aware `text-anchor` |
+
+**Fix applied** to `backend/open_webui/prompts/cruz_system.md` — the *Chart
+layout* section now budgets the frame into non-overlapping horizontal bands
+(title 0-56, plot 72-400, category labels 400-430, legend 445-465, source
+480-505), mandates one shared x scale and one row of category labels, forbids
+labelling every point, requires collision checks before placing callouts, and
+sets edge-aware `text-anchor`. Also corrected a rule that was actively wrong
+for this chart: "sort bars by value, largest first" now excepts time axes,
+which are always chronological.
+
+Prompt grows 5028 -> 6777 chars; `cruz_migrate.py` dry run confirms it applies
+to all three models.
+
+**This raises the floor, it does not guarantee the outcome.** The SVG is
+hand-placed by the model per request, so layout compliance is probabilistic. The
+deterministic fix is to stop hand-placing text — have the model emit data plus a
+small inline layout routine that positions labels and resolves collisions
+programmatically. Larger change; not attempted here.
+
+**Deploying it needs two steps, not one.** `cruz_system.md` is never read at
+runtime — `cruz_migrate.py` writes it into the database. After the branch
+deploys, run inside the container:
+
+    python scripts/cruz_migrate.py --db /app/backend/data/webui.db --apply
+
+Without that second step the live prompt stays at 5028 chars and charts are
+unchanged. This is the same failure that produced the empty-prompt ASCII-bar
+incident in 7l.
+
+---
+
 ## 8. Next steps
 
 1. **Verify answer quality in the UI** with both models on identical questions.

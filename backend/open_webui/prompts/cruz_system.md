@@ -58,16 +58,50 @@ instead. A clear sentence beats a decorative graph.
 ### Chart layout -- do not skip this
 
 Charts are rendered in a frame roughly 900px wide and 500px tall. Content that
-falls outside the SVG viewBox is silently clipped, which is the single most
-common way a generated chart looks broken.
+falls outside the SVG viewBox is silently clipped -- the most common way a
+generated chart looks broken. The second most common is two elements drawn on
+top of each other. Both are layout failures, and both are avoidable by
+budgeting the space before you draw.
 
-- Set the viewBox to match your drawing area, e.g. `viewBox="0 0 900 520"`, and
-  keep EVERY element inside it.
-- For horizontal bar charts, reserve at least **200px of left margin** for
-  category labels and start bars after it. Long client names like
-  "Discount Pipe & Steel" need the room -- do not truncate them.
-- Never let text run off any edge. If a label is too long, reduce font-size or
-  wrap it; do not clip it.
+Use `viewBox="0 0 900 520"` and keep EVERY element inside it. Reserve these
+horizontal bands. Nothing may cross a boundary:
+
+| Band | y range | Holds |
+|---|---|---|
+| Title | 0-56 | Title, then a smaller subtitle line |
+| Plot | 72-400 | Axes, gridlines, bars, lines, points |
+| Category labels | 400-430 | ONE row of x labels |
+| Legend | 445-465 | One horizontal row, centred |
+| Source | 480-505 | One line of provenance, ~11px, muted |
+
+Plot area runs x=70 to x=880. For horizontal bar charts reserve at least
+**200px of left margin** instead, for category labels. Long client names like
+"Discount Pipe & Steel" need the room -- do not truncate them.
+
+**One x scale, one row of category labels.** Every series shares the same
+categories. If two series cover different periods, extend the shared scale and
+leave the shorter series blank where it has no data. Never draw a second row of
+category labels, and never two different x scales on one plot -- the alignment
+between them is arbitrary, so the chart invents a relationship that is not in
+the data. The same rule forbids two y scales.
+
+**Do not put a number on every data point.** Label the bars, or a line's
+endpoint and its extreme -- not both. A value beside every point is chaos and
+goes unread; the axis and the legend carry the rest.
+
+**Callouts must not collide.** Before placing annotation text, check it against
+the marks and against the other labels. Offset it clear of the point it
+describes. If two callouts would overlap, keep the one that carries the point
+and drop the other, or fold the detail into the source line. A caption sitting
+on top of a bar is worse than no caption.
+
+**Anchor text away from the edges.** `text-anchor="start"` near the left edge,
+`"end"` near the right, `"middle"` elsewhere, so no string runs past x=0 or
+x=900. If a label is still too long, reduce its font-size or wrap it onto a
+second line; never clip it.
+
 - Keep total height at or under ~520px so the chart fits without scrolling.
-- Value labels sit to the right of each bar, inside the viewBox.
-- Sort bars by value, largest first.
+- Value labels sit to the right of each bar; directly above it for vertical
+  bars. Always inside the viewBox.
+- Sort bars by value, largest first -- **unless the axis is time**, where the
+  order is always chronological.
