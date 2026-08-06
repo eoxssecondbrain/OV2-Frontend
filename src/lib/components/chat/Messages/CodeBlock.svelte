@@ -2,7 +2,7 @@
 	import hljs from 'highlight.js';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount, tick, onDestroy } from 'svelte';
-	import { config, pyodideWorker as pyodideWorkerStore } from '$lib/stores';
+	import { config, theme, pyodideWorker as pyodideWorkerStore } from '$lib/stores';
 
 	import { createPyodideWorker } from '$lib/pyodide/createPyodideWorker';
 	import { executeCode } from '$lib/apis/utils';
@@ -42,6 +42,94 @@
 
 	export let token;
 	export let lang = '';
+
+	// CRUZ BRAND PATCH: true when this block is rendered as a live chart inline
+	// (see the iframe further down). When it is, the source is suppressed --
+	// otherwise the reader gets a chart with a wall of HTML stacked beneath it,
+	// and "Expand" reveals code rather than enlarging the chart. Use the Preview
+	// button for a larger view.
+	//
+	// Matched on the closing markup rather than the fence language alone: models
+	// label SVG as svg, xml, svg+xml or nothing at all, and an unrecognised label
+	// meant the chart silently fell back to a collapsed code block. The language
+	// list still gates it so that a *program* which happens to print '</svg>'
+	// keeps its source and its Run button.
+	const CRUZ_ARTIFACT_LANGS = ['', 'html', 'svg', 'xml', 'svg+xml', 'image/svg+xml'];
+	$: cruzInlineArtifact =
+		CRUZ_ARTIFACT_LANGS.includes((lang ?? '').toLowerCase()) &&
+		(code.includes('</html>') || code.includes('</svg>'));
+
+	// The frame is sandboxed, so prefers-color-scheme inside it follows the OS
+	// while the frame's own background follows the app theme (bg-white
+	// dark:bg-black, below). Those two disagree on a light-themed machine running
+	// Cruz in dark mode, which rendered dark text on a black background -- an
+	// invisible chart with no error. The app theme is the one that colours the
+	// frame, so it is the one that decides the ink. Read from the document rather
+	// than from the theme name because 'system' resolves to a class at runtime,
+	// and because the class is literally what drives the frame's background.
+	// $theme is passed in only so this recomputes when the user switches themes;
+	// both theme setters apply the class synchronously, so it is already in place
+	// by the time this reactive statement flushes.
+	const cruzInk = (_theme: string) =>
+		typeof document !== 'undefined' && !document.documentElement.classList.contains('dark')
+			? '#3A3A46'
+			: '#E8E8F0';
+	$: cruzArtifactInk = cruzInk($theme);
+
+	// SVG clips anything outside its viewBox, silently. Generated charts routinely
+	// place long axis labels just outside it, so text disappears with no error and
+	// it reads as a rendering bug. Prompting alone does not reliably prevent this,
+	// so the frame document is fixed up here instead: overflow:visible stops the
+	// clipping, and the padded, scrolling wrapper guarantees whatever spills out
+	// is still reachable.
+	//
+	// The text rule is a floor, not an override, and its weight is chosen with care.
+	// A fill="..." presentation attribute loses to any author stylesheet, so a
+	// hard-coded dark label still gets themed and cannot vanish against the frame.
+	// A chart that themes itself -- which the model prompt asks for, via a
+	// prefers-color-scheme media query -- declares 'text' at the same specificity
+	// but later in the document, so its own colours win. Hence bare 'text' rather
+	// than 'svg text', and hence the stylesheet goes in at the TOP of <head>:
+	// injecting it before </head> would have placed it after the chart's own
+	// styles and silently overruled them.
+	//
+	// The tag is assembled rather than written literally, and that is load-bearing:
+	// svelte's preprocessor scans the component TEXT for style blocks, so a literal
+	// <style> here is handed to postcss, which rejects the ${ink} interpolation with
+	// "Unknown word ink" and fails `npm run build`. Splitting it keeps this string
+	// out of that scan. (Upstream got away with a literal tag only because its CSS
+	// happened to be static and parseable -- it was still being compiled into the
+	// component as a phantom style block.)
+	const STYLE_OPEN = '<' + 'style>';
+	const STYLE_CLOSE = '<' + '/style>';
+	const cruzArtifactCss = (ink: string) => `
+${STYLE_OPEN}
+  html, body { margin:0; padding:0; background:transparent; overflow:visible; color:${ink}; }
+  body { padding:14px 18px; box-sizing:border-box;
+         font-family:'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
+  svg { overflow: visible !important; max-width:100%; height:auto; display:block; }
+  text { fill: ${ink}; }
+  .grid, .axis { stroke: ${ink}; opacity: 0.18; }
+  .wrap, .container { max-width:100% !important; }
+${STYLE_CLOSE}`;
+
+	$: cruzArtifactDoc = !cruzInlineArtifact
+		? ''
+		: code.includes('<head>')
+			? code.replace('<head>', `<head>${cruzArtifactCss(cruzArtifactInk)}`)
+			: cruzArtifactCss(cruzArtifactInk) + code;
+
+	let cruzArtifactFrame: HTMLIFrameElement;
+
+	const cruzFullscreen = () => {
+		const el: any = cruzArtifactFrame?.parentElement ?? cruzArtifactFrame;
+		if (!el) return;
+		if (document.fullscreenElement) {
+			document.exitFullscreen?.();
+		} else {
+			(el.requestFullscreen ?? el.webkitRequestFullscreen ?? el.msRequestFullscreen)?.call(el);
+		}
+	};
 	export let code = '';
 	export let attributes = {};
 
@@ -519,7 +607,9 @@
 						on:click={copyCode}>{copied ? $i18n.t('Copied') : $i18n.t('Copy')}</button
 					>
 
-					{#if preview && ['html', 'svg'].includes(lang)}
+					<!-- CRUZ BRAND PATCH: same widened match as the inline render, so an
+					     SVG fenced as xml (or unfenced) still offers the side panel. -->
+					{#if preview && (cruzInlineArtifact || ['html', 'svg'].includes(lang))}
 						<button
 							class="flex gap-1 items-center run-code-button bg-none border-none transition rounded-md px-1.5 py-0.5 bg-white dark:bg-black"
 							on:click={previewCode}
@@ -541,7 +631,9 @@
 			>
 				<div class=" pt-6.5 bg-white dark:bg-black"></div>
 
-				{#if !collapsed}
+				{#if cruzInlineArtifact}
+					<!-- CRUZ BRAND PATCH: chart renders below; source intentionally hidden. -->
+				{:else if !collapsed}
 					{#if edit}
 						<CodeEditor
 							value={code}
@@ -581,6 +673,43 @@
 					</div>
 				{/if}
 			</div>
+
+			<!--
+				CRUZ BRAND PATCH: render html/svg inline, in the conversation.
+				Upstream only offers "Preview", which opens the side artifact panel --
+				so a chart is either invisible or off to one side. Claude renders it in
+				the message flow, which is what people expect of a chart.
+
+				Gated on closing markup so a partially-streamed document does not
+				flicker on every token. sandbox="allow-scripts" WITHOUT
+				allow-same-origin is deliberate: scripts run, but the frame cannot
+				reach the parent document, cookies or session. Do not add
+				allow-same-origin here.
+			-->
+			{#if cruzInlineArtifact}
+				<div class="cruz-artifact-wrap relative">
+					<iframe
+						bind:this={cruzArtifactFrame}
+						title={$i18n.t('Preview')}
+						class="cruz-inline-artifact w-full border-0 bg-white dark:bg-black"
+						sandbox="allow-scripts"
+						srcdoc={cruzArtifactDoc}
+					></iframe>
+
+					<!--
+						Upstream's "Expand" only toggles the source, which is hidden for
+						artifacts -- so it appeared to do nothing. This puts the chart
+						itself into real fullscreen instead.
+					-->
+					<button
+						class="cruz-artifact-fullscreen absolute top-2 right-2 rounded-lg px-2 py-1 text-xs"
+						title={$i18n.t('Fullscreen')}
+						on:click={cruzFullscreen}
+					>
+						⤢
+					</button>
+				</div>
+			{/if}
 
 			{#if !collapsed}
 				<div

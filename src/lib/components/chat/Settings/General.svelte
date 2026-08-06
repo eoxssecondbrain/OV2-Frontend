@@ -17,8 +17,8 @@
 	export let getModels: Function;
 
 	// General
-	let themes = ['dark', 'light', 'oled-dark'];
-	let selectedTheme = 'system';
+	let themes = ['dark', 'light', 'system'];  // CRUZ BRAND PATCH: oled-dark and her removed
+	let selectedTheme = 'dark';
 
 	let languages: Awaited<ReturnType<typeof getLanguages>> = [];
 	let lang = $i18n.language;
@@ -111,7 +111,7 @@
 	};
 
 	onMount(async () => {
-		selectedTheme = localStorage.theme ?? 'system';
+		selectedTheme = localStorage.theme ?? 'dark';
 
 		languages = await getLanguages();
 
@@ -132,11 +132,15 @@
 			themeToApply = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 		}
 
-		if (themeToApply === 'dark' && !_theme.includes('oled')) {
-			document.documentElement.style.setProperty('--color-gray-800', '#333');
-			document.documentElement.style.setProperty('--color-gray-850', '#262626');
-			document.documentElement.style.setProperty('--color-gray-900', '#171717');
-			document.documentElement.style.setProperty('--color-gray-950', '#0d0d0d');
+		// CRUZ BRAND PATCH: upstream reset these to its own greys (#333/#262626/
+		// #171717/#0d0d0d) on every theme change, overriding the Cruz palette from
+		// tailwind.config.js at runtime -- dark mode silently reverted to stock
+		// Open WebUI. Values below match the ramp anchored to the site's --bg.
+		if (themeToApply === 'dark') {
+			document.documentElement.style.setProperty('--color-gray-800', '#191922');
+			document.documentElement.style.setProperty('--color-gray-850', '#101017');
+			document.documentElement.style.setProperty('--color-gray-900', '#0a0a0f');
+			document.documentElement.style.setProperty('--color-gray-950', '#050507');
 		}
 
 		themes
@@ -158,19 +162,12 @@
 					? 'dark'
 					: 'light';
 				console.log('Setting system meta theme color: ' + systemTheme);
-				metaThemeColor.setAttribute('content', systemTheme === 'light' ? '#ffffff' : '#171717');
+				metaThemeColor.setAttribute('content', systemTheme === 'light' ? '#ffffff' : '#050507');
 			} else {
 				console.log('Setting meta theme color: ' + _theme);
-				metaThemeColor.setAttribute(
-					'content',
-					_theme === 'dark'
-						? '#171717'
-						: _theme === 'oled-dark'
-							? '#000000'
-							: _theme === 'her'
-								? '#983724'
-								: '#ffffff'
-				);
+				// CRUZ BRAND PATCH: dark uses the site's --bg. The oled-dark and
+				// "her" branches are gone with those themes.
+				metaThemeColor.setAttribute('content', _theme === 'dark' ? '#050507' : '#ffffff');
 			}
 		}
 
@@ -178,13 +175,12 @@
 			window.applyTheme();
 		}
 
-		if (_theme.includes('oled')) {
-			document.documentElement.style.setProperty('--color-gray-800', '#101010');
-			document.documentElement.style.setProperty('--color-gray-850', '#050505');
-			document.documentElement.style.setProperty('--color-gray-900', '#000000');
-			document.documentElement.style.setProperty('--color-gray-950', '#000000');
-			document.documentElement.classList.add('dark');
-		}
+		// CRUZ BRAND PATCH: the oled-dark override is removed. It forced the
+		// palette to pure black, and it fired on `_theme` rather than the resolved
+		// theme -- so anyone with 'oled-dark' still in localStorage from before we
+		// dropped the option would keep overriding the Cruz palette even though the
+		// theme is no longer selectable. The mapping above already resolves it to
+		// plain dark.
 
 		console.log(_theme);
 	};
@@ -211,13 +207,17 @@
 					placeholder={$i18n.t('Select a theme')}
 					on:change={() => themeChangeHandler(selectedTheme)}
 				>
-					<option value="system">⚙️ {$i18n.t('System')}</option>
+					<!--
+						CRUZ BRAND PATCH: Dark first, and only the three themes Cruz
+						actually styles. OLED Dark overrides the gray-800/850/900/950
+						variables with pure black, which bypasses the Cruz palette
+						entirely; "Her" is an upstream easter egg (#983724) with no
+						relationship to the brand. Neither was ever going to look like
+						Cruz, so offering them only invites a broken-looking product.
+					-->
 					<option value="dark">🌑 {$i18n.t('Dark')}</option>
-					<option value="oled-dark">🌃 {$i18n.t('OLED Dark')}</option>
 					<option value="light">☀️ {$i18n.t('Light')}</option>
-					{#if $config?.features?.enable_easter_eggs}
-						<option value="her">🌷 Her</option>
-					{/if}
+					<option value="system">⚙️ {$i18n.t('System')}</option>
 				</SettingsSelect>
 			</UserSettingRow>
 

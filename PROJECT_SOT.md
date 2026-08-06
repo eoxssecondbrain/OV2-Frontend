@@ -4,7 +4,7 @@ Authoritative state of the EOXS AI project. Governed by `BUILDING_GUIDELINES.md`
 Every code change, config change, decision, and checkpoint is recorded here in
 the session it happens. If this file disagrees with reality, this file is wrong.
 
-**Last updated:** 2026-07-31
+**Last updated:** 2026-08-04
 
 ---
 
@@ -485,10 +485,12 @@ returns `"name": "Cruz"` and the PWA manifest reports Cruz.
 `src/`, almost all admin-settings help text, the About dialog, and community
 sync copy. Left alone because they churn upstream and rewriting them multiplies
 merge conflicts. Revisit before shipping to a client.
+→ **Superseded 2026-08-04 by §7k** — all of these were removed.
 
 **Assets not yet replaced:** `static/favicon.png`, `static/static/{favicon.*,
 logo.png, splash.png, splash-dark.png, apple-touch-icon.png}`. Swapping files
 needs no code change and no merge risk.
+→ **Done 2026-08-02** (PNG/ICO set), **`favicon.svg` missed until §7k**.
 
 ## 7h. Demo hosting via Cloudflare tunnel (2026-07-31)
 
@@ -648,6 +650,397 @@ disabling the `Cruz Demo Stack` task). Running both means two divergent
 databases, with chats splitting by whichever URL a user happened to open and no
 way to merge them afterwards.
 
+---
+
+## 7j. Local dev stack run + `start-dev.sh` gap (2026-08-04)
+
+Brought the full local stack up via `bash start-dev.sh` + `npm run dev`.
+Verified running, not assumed:
+
+| Check | Result |
+|---|---|
+| `GET :8080/health` | `{"status":true}` |
+| `GET :8080/api/config` | `name: "Cruz"`, version `0.11.0`, signup disabled |
+| `GET :8080/static/custom.css` | 200, 11 203 bytes (Cruz palette serving) |
+| Frontend `:5173` SSR | 200, `<title>Cruz</title>`, references `custom.css` |
+| MCP `:9090` eoxs-vault | initialize OK → **21 tools** |
+| MCP `:9091` threads-ov | initialize OK → **15 tools** |
+| MCP `:9092` eoxs-db | initialize OK → **20 tools** |
+
+### Gap found: `start-dev.sh` starts two bridges, the DB registers three
+
+`config.tool_server.connections` in `backend/data/webui.db` lists three
+**enabled** MCP servers — `eoxs-vault` (:9090), `threads-ov` (:9091), and
+`eoxs-db` (:9092). `start-dev.sh` launches only :9090 and :9091, so in local
+dev the `eoxs-db` server is registered-but-dead: its 20 tools fail at call
+time rather than being absent, which is the worse failure mode.
+
+`render-start.sh` already supervises :9092 correctly (guarded on `DB_MCP_URL`),
+and `DB_MCP_URL` is present in `.env` — so this is purely a dev-launcher
+omission, not a missing credential. Production on Render is unaffected.
+
+**Fix required:** port the `render-start.sh` :9092 block into `start-dev.sh`
+(and add 9092 to its port-cleanup loop and to `stop-cruz.sh`). Started by hand
+this session as a stopgap; not yet committed.
+
+Also noted: the first `curl` to `:5173` after boot can exceed 10 s — Vite
+compiles the SSR entry on demand. Not a fault; allow a long timeout before
+calling it down.
+
+---
+
+## 7k. Full de-branding: "Open WebUI" removed product-wide (2026-08-04)
+
+Requirement: the product ships as **Cruz**. No "Open WebUI" string may appear
+anywhere a user or admin can see. This supersedes §7g's decision to leave ~49
+admin strings alone — that trade (fewer merge conflicts) was overridden.
+
+**Licence position unchanged.** Still permitted under clause 4(i) (≤50 end users
+per rolling 30 days), same condition as §7g. `LICENSE`, `LICENSE_HISTORY` and
+`LICENSE_NOTICE` are **untouched**, which satisfies clauses 1 and 2 (the
+copyright notice is retained in the distribution). **If the 50-user threshold is
+ever crossed without an enterprise licence, this entire change must be
+reverted along with §7g's.**
+
+### Scope changed: 153 files
+
+| Area | Change |
+|---|---|
+| `src/` (52 files) | All 124 occurrences resolved — user-visible text → "Cruz"; community/docs links removed |
+| `src/lib/i18n/locales/` (63 files) | 1 575 occurrences. Replaced in **keys and values together** so i18next lookups still resolve; `{{OPEN_WEBUI_VERSION}}` → `{{CRUZ_VERSION}}` consistently on both sides |
+| `backend/open_webui/` (33 files) | All user-visible strings, outbound headers, log output, docstrings and comments |
+| Assets / manifests | `favicon.svg`, `site.webmanifest` |
+| Package identity | `package.json` name, `pyproject.toml` name + console script (`open-webui` → `cruz`) |
+
+### Features removed, not just renamed
+
+These were not text problems — they were live integrations with Open WebUI's
+own services, which would have leaked the origin at runtime:
+
+| Removed | Why |
+|---|---|
+| **Community sharing end to end** — share-to-community handlers in Tools / Prompts / Models / Functions / Feedbacks / ShareChatModal, the four `Share` menu items, the `CommunityDiscover` component, and the `ENABLE_COMMUNITY_SHARING` admin toggle | Every path posted content to `openwebui.com` and toasted "Redirecting you to Open WebUI Community" |
+| **Inbound `postMessage` handlers** trusting `https://openwebui.com` in 4 create pages + `+layout.svelte` | Third-party origin trusted to prefill forms. Dead once the outbound links went, and a trust boundary worth closing regardless |
+| **`SyncStatsModal`** (usage-stats sync to the community leaderboard) | Sent aggregated usage to Open WebUI |
+| **`ChangelogModal` + "See what's new"** (both entry points) and the "What's New on login" setting | The modal rendered **upstream's `CHANGELOG.md` — 2 212 brand references** — into the UI for every user. Renaming it would have fabricated a Cruz release history, so the surface was removed instead. `/api/changelog` now returns `{}` |
+| **Version update check** (`/api/version/updates`) | Called `api.github.com/repos/open-webui/open-webui/releases/latest` and offered upstream's version as an update. Now reports installed = latest, no outbound call |
+| **Legacy `CUSTOM_NAME` branding fetch** (`config.py`) | Pulled name/logo/splash from `api.openwebui.com` and **overwrote the local favicon**. Cruz now makes no calls to Open WebUI services |
+| **`HTTP-Referer: https://openwebui.com/`** on OpenRouter requests | Identified the app as Open WebUI to a third party. `X-Title` now sends `Cruz` |
+| Sponsorship banner (>50 users), enterprise-licence upsells, docs/Discord/X/GitHub links, "Help us translate Open WebUI!" | Brand and outbound links |
+
+### Asset bug found and fixed
+
+`static/static/favicon.svg` was **byte-identical to the pre-Cruz icon** and is
+the *first* `<link rel="icon">` in `app.html` — so browsers preferring SVG
+favicons showed the old logo in the tab, despite the PNG set having been
+replaced on 2026-08-02. Regenerated from `favicon.png`; original kept as
+`favicon.eoxs-backup.svg`. Also `site.webmanifest` still had
+`"short_name": "WebUI"` (the PWA home-screen name) → `Cruz`.
+
+### Deliberately kept — internal identifiers, not branding
+
+Changing these breaks working code for no user-visible gain:
+
+| Kept | Reason |
+|---|---|
+| `open_webui` Python package path (incl. `from open_webui.utils.misc import …` in the plugin boilerplate) | Real import path; renaming breaks every plugin |
+| `open_webui:code_interpreter` | Structured-output type agreed with the backend |
+| `application/x-open-webui-drag` | Internal drag-and-drop MIME type |
+| `required_open_webui_version` | Plugin manifest key; the *message* around it now says Cruz |
+| `ghcr.io/open-webui/open-terminal:latest` | Real container image name |
+| Licence-server URLs in `utils/auth.py` | Only reached when a licence key is set (none is). Removing them would break enterprise licensing if ever purchased |
+| 3 comments in `env.py` / `config.py` naming the licence clause | Deliberate — they document the compliance condition for reverting |
+
+### Verified, not assumed (2026-08-04)
+
+| Check | Result |
+|---|---|
+| `npm run build` | Succeeds |
+| Backend import + startup | Clean; banner prints `Cruz v0.11.0` |
+| Python syntax across `backend/open_webui` | 0 errors |
+| All 63 locale JSON files parse | 0 errors |
+| `GET /api/config` | `name: "Cruz"`, **0 brand hits in the whole payload** |
+| `GET /` served HTML | `<title>Cruz</title>`, 0 brand hits |
+| `GET /openapi.json` | `info.title: "Cruz"` |
+| `GET /api/changelog` | `{}` |
+| `build/` output | **0 occurrences** of `Open WebUI` / `OpenWebUI` / `openwebui.com` |
+
+Remaining matches in `build/` are only the kept identifiers above
+(`open_webui_version`, `open-webui-drag`, `open_webui:code_interpreter`).
+
+Verification ran against a throwaway backend on **:8099** so the live stack on
+:8080 was never disturbed; that instance has been stopped.
+
+**Action required before this is visible:** the backend copies `build/static/`
+into `backend/open_webui/static/` **at startup only**, so the running :8080
+process must be restarted to serve the rebuilt frontend.
+
+**Not done (out of scope, repo-internal, no runtime surface):** `README.md`,
+`CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `CONTRIBUTOR_LICENSE_AGREEMENT`,
+`docs/SECURITY.md`, `banner.png`, `demo.png`. `CHANGELOG.md` must stay on disk —
+`env.py` still reads it at import — but nothing renders it any more.
+
+---
+
+## 7l. Charts actually render (2026-08-05)
+
+**Symptom.** "Show me this in graphical representation" produced four collapsed
+code blocks reading *"17 hidden lines"*, above the model's own line: *"Since I
+don't have a chart-rendering tool here, here's a text-based visual
+representation."* No chart appeared.
+
+**Root cause — it is a deployment gap, not a missing feature.** The Cruz models
+in the local database already carry a thorough charting section in their own
+system prompt (4 760 chars: "never draw charts with text", emit one
+self-contained ` ```html ` block, viewBox sizing, 200px left margin for long
+client names, the brand palette). Checked directly:
+
+```
+cruz       system_prompt=4760 chars  keywords=[chart, graph, svg, plot, visual, ascii]
+cruz-pro   system_prompt=4760 chars  (same)
+cruz-lite  system_prompt=4760 chars  (same)
+```
+
+The screenshotted chat is **not in the local database** (21 chats, no match),
+so it came from another instance — Render or the tunnel demo. Those are built
+from the branch, and `scripts/cruz_migrate.py` **deliberately does not migrate
+system prompts** (7j). A Cruz model there has an *empty* prompt, so it had never
+been told the renderer exists: hence "Since I don't have a chart-rendering tool
+here" and bars made of block characters. It works on the dev box and fails on
+every deployed instance.
+
+**Three fixes:**
+
+| # | Cause | Fix |
+|---|---|---|
+| 1 | The charting instruction is DB-only, and the DB is not carried by the branch | `CRUZ_CHART_DIRECTIVE` in `utils/middleware.py`, appended to the system prompt in `process_chat_payload` |
+| 2 | `cruzInlineArtifact` matched only ` ```html ` / ` ```svg `. An SVG fenced as `xml` or untagged fell through to a normal code block | Match on closing markup (`</svg>`, `</html>`) across a widened language list including the empty fence |
+| 3 | Chart text colour was undefined when the model set none | Frame supplies a themed default that a `fill` attribute cannot beat |
+
+**The code directive is a floor, not a replacement.** It states only what must
+hold on every instance — html/svg renders inline, never draw with text, keep
+inside the viewBox — and is worded to agree with the database prompt rather than
+compete with it. The layout and palette detail stays in the model prompt where
+it can be tuned without a deploy. ~190 tokens on every chat request, accepted.
+
+**The theme trap.** The artifact iframe is `sandbox="allow-scripts"` without
+`allow-same-origin`, so `prefers-color-scheme` inside it follows the **OS**,
+while the frame's own background (`bg-white dark:bg-black`) follows the **app**
+theme. Those disagree for anyone on a light-themed machine — Cruz defaults to
+dark (7g) — which would have rendered dark text on a black background: an
+invisible chart with no error, the exact failure class 7g's `overflow:visible`
+fix already addressed once. So the ink is resolved from
+`documentElement.classList.contains('dark')` and injected into the frame CSS.
+Read from the class rather than the theme name because `system` only resolves to
+a class at runtime, and the class is what colours the frame.
+
+The frame rule is `text`, not `svg text`, and it is injected at the **top** of
+`<head>` rather than before `</head>`. Both choices matter: a `fill="..."`
+presentation attribute loses to any author stylesheet, so a hard-coded dark
+label still gets themed and cannot vanish — but a chart that themes itself with
+the `prefers-color-scheme` query the model prompt asks for declares `text` at
+equal specificity *later* in the document and therefore still wins. The first
+attempt used `svg text` injected before `</head>`, which would have silently
+overruled every correctly themed chart.
+
+**The prompt now lives in git.** This was the actual defect — a chart bug was
+only its symptom. `backend/open_webui/prompts/cruz_system.md` holds the Cruz
+system prompt verbatim (all three models shared one identical copy,
+sha `bd8167d33e41`), and `cruz_migrate.py` step [6] writes it to `cruz`,
+`cruz-pro` and `cruz-lite` on every run.
+
+It sits under `backend/` rather than a top-level `prompts/` because the runtime
+image copies only `build/`, `package.json`, `CHANGELOG.md` and `backend/` —
+`scripts/` and anything else is unreachable inside the container.
+
+One behavioural change to the prompt itself: the chart section no longer says
+"use a `prefers-color-scheme` media query" — it now tells the model to leave
+text colour to the frame, which resolves the OS-vs-app-theme split described
+above. Everything else is byte-identical.
+
+**Direction of authority is now reversed, and it is a trap.** The file
+overwrites the database, so a prompt edited in Workspace → Models is silently
+lost on the next migration run. The script says so on every dry run.
+
+**Verified:** dry run reports `4759 -> 5028 chars` for all three models; applied
+against a copy of `webui.db`, then re-run → `already current` for all three
+(idempotent); `function_calling`, `reasoning_effort` and `stream_options`
+survive the write; the vault-search and 200px-margin sections are intact. The
+live database has **not** been written — that needs
+`python scripts/cruz_migrate.py --apply`.
+
+**Files:** `backend/open_webui/utils/middleware.py`,
+`src/lib/components/chat/Messages/CodeBlock.svelte` (both marked
+`CRUZ BRAND PATCH`), `backend/open_webui/prompts/cruz_system.md` (new),
+`scripts/cruz_migrate.py`.
+
+**To deploy:** `npm run build`, restart the backend, then
+`python scripts/cruz_migrate.py --apply` against each instance's database —
+the local one included, since its prompt still carries the old
+`prefers-color-scheme` instruction.
+
+### Build trap: a literal `<style>` inside a script string
+
+The first version broke `npm run build`. Svelte's preprocessor scans the
+component **text** for style blocks, so the `<style>` tag inside the
+`cruzArtifactCss` template literal was handed to postcss, which rejected the
+`${ink}` interpolation: `CssSyntaxError: Unknown word ink`. The tag is now
+assembled (`'<' + 'style>'`) to stay out of that scan.
+
+Upstream's version survived only because its CSS was static and parseable — it
+was still being compiled into the component as a phantom style block.
+
+This was missed by a standalone `svelte.compile()` check, which does not run
+vite's preprocessing. **Only `npm run build` proves a Svelte change builds.** It
+was also nearly missed a second time: `npm run build 2>&1 | tail` reports the
+exit code of `tail`, not the build. Redirect to a file and check `$?`.
+
+### Verified locally, end to end (2026-08-05)
+
+Stack: bridges :9090 / :9091 / :9092 (the third started by hand — 7j gap still
+open), backend :8080 healthy, frontend rebuilt.
+
+| Check | Result |
+|---|---|
+| `npm run build` | exit 0, clean (the two "error" hits are filenames) |
+| New logic in the built bundle | `image/svg+xml` and the frame font stack present in `build/_app/immutable/` |
+| Migration applied to local DB | `4759 -> 5028` chars, all three models, COMMITTED |
+| **Live chat request to `cruz`** | ` ```html ` block, `<svg viewBox="0 0 900 500">`, 2 643 chars |
+| Block/shade characters in reply | **none** |
+| "I don't have a chart-rendering tool" | **absent** |
+| Renderer match on the real reply | `cruzInlineArtifact` → **true**, prepend path (no `<head>`) |
+| Frame CSS ordering | stylesheet precedes `<svg>` in both light and dark composition |
+| Text-colour collision | 16 `<text>` elements, 9 on `currentColor`, **0** with a hard-coded hex fill — nothing of the model's is overridden; the hex fills are on bars and legend swatches |
+
+The database backup taken before the migration is in the session scratchpad as
+`webui.db.bak-before-chartfix`.
+
+**Still not verified:** the chart as pixels in a browser. Everything up to the
+composed frame document is confirmed; the final visual needs the UI opened by
+hand. Render and the tunnel instance are untouched.
+
+---
+
+## 7m. `eoxs-db` MCP connection failing in live — diagnosis (2026-08-06)
+
+**Symptom.** Adding `https://5.223.44.95/mcp/<secret>/sse` directly as a tool
+server in the live UI returns "Connection failed", under both connection types.
+
+**Cause — configuration, not a fault.** The upstream is healthy. Verified by
+hand against it: legacy HTTP+SSE handshake succeeds, `serverInfo` is
+`eoxs-wiki-db-general v1.29.0`, `tools/list` returns **20 tools**, and a live
+`get_index` call returns real data (307 wiki pages, 23,187 email threads, 1,780
+tickets, 1,907 Fireflies + 95 Fathom calls, 8 clients, 753 implementation
+tasks). Its TLS certificate verifies without `-k`.
+
+The server speaks **only** the legacy transport. It has no streamable-HTTP
+endpoint — `POST` to the base, `/`, `/mcp`, `/message` all 404; only
+`/messages` responds (307, the legacy session endpoint). So:
+
+| Connection type tried | Why it fails |
+|---|---|
+| OpenAPI | Fetches `<url>/openapi.json` (`utils/tools.py:1253`) → 404 on this server |
+| MCP Streamable HTTP | `utils/mcp/client.py` used `streamablehttp_client` only → no such endpoint |
+
+**This is exactly what `vault_bridge.py` exists for.** The correct live wiring
+is the `:9092` bridge, already registered by `scripts/cruz_migrate.py` as
+`http://127.0.0.1:9092/mcp`, `auth_type: none`, id `eoxs-db`. The direct URL
+must go in the `DB_MCP_URL` **environment variable**, not in the UI — that is
+also the only place it belongs, since the path carries a secret.
+
+**CORRECTION — there are two scope tiers, not one server.** An earlier draft of
+this entry said to set `DB_MCP_URL` to this URL. That was wrong and would have
+silently downgraded the corpus. The host serves two secret-path endpoints:
+
+| Token path | serverInfo | wiki_pages | email_threads | tickets | fireflies | fathom | impl_tasks |
+|---|---|---|---|---|---|---|---|
+| `nGJz…` (in `DB_MCP_URL` today) | `eoxs-wiki-db-full` | 1048 | 30392 | 1955 | 2252 | 131 | 827 |
+| `D5RB…` (being added as `eoxs-users`) | `eoxs-wiki-db-general` | 307 | 23187 | 1780 | 1907 | 95 | 753 |
+
+`sales_orders` (185) and `clients` (8) are identical in both. Same 20 tool
+names, same version — **`general` is a strict data subset of `full`**, i.e. an
+access tier for non-privileged users. This is the scoping mechanism referenced
+in next-step 6.
+
+The failure mode to avoid: the two are indistinguishable by tool list, tool
+count or version. Pointing `DB_MCP_URL` at the `general` URL swaps Cruz's
+corpus for the restricted one with **no error and no visible symptom** — only
+the row counts differ. `DB_MCP_URL` must stay on `eoxs-wiki-db-full`.
+
+**Consequence for the live fix:** `general` is a *fourth* upstream, not a
+reconfiguration of the third. `vault_bridge.py` is one-upstream-per-process, so
+bridging it needs a new port (`:9093`), a new env var, and a `render-start.sh`
+supervise line — a deploy, not a dashboard change.
+
+Whatever the wiring, the id must be `eoxs-db` for the full-corpus connection —
+`cruz`/`cruz-pro`/`cruz-lite` carry `server:mcp:eoxs-db` in `toolIds`; a
+connection registered under any other id is invisible to those models. A new
+`eoxs-users` connection is only reachable by models that list it explicitly.
+
+**Intent confirmed (Jaskeerat, this session):** `general` is the knowledge base
+for ordinary users, generated by stripping sensitive data. The Raj vault
+(`VAULT_MCP_URL`, `:9090`) is CEO-only. So `general` is added *alongside* the
+full corpus, not a replacement for it.
+
+**What was built.** A fourth bridge, following the existing pattern so the
+secret stays in the Render environment rather than in `webui.db`:
+
+- `render.yaml` — new `USERS_MCP_URL` env var, `sync: false`, documented as
+  the `-general` endpoint with an explicit warning against crossing it with
+  `DB_MCP_URL`.
+- `render-start.sh` — optional-guarded `supervise "eoxs-users"
+  "$USERS_MCP_URL" 9093`, added to `PORTS` so boot waits for it, and included
+  in the `<...>` placeholder check.
+- `DEPLOY-RENDER.md` — both URLs documented with the scope-tier table and the
+  `get_index` row-count check that is the only way to tell the two apart.
+
+**Verified**, running `vault_bridge.py` exactly as production invokes it
+(`VAULT_MCP_URL=<general> VAULT_BRIDGE_PORT=9093`), then connecting through the
+real `MCPClient` over streamable HTTP: 20 tools, `wiki_pages=307` — correctly
+the redacted scope. `bash -n` clean, `render.yaml` parses.
+
+**Still to do by hand (dashboard + UI, not in git):** set `USERS_MCP_URL` in the
+Render environment, and register the connection at `http://127.0.0.1:9093/mcp`,
+type `mcp`, auth `none`, id `eoxs-users`.
+
+**Open question — access scoping is not yet enforced.** Adding `eoxs-users`
+does not by itself restrict anyone. `cruz`/`cruz-pro`/`cruz-lite` still carry
+`server:mcp:eoxs-db` (the *full* corpus) in `toolIds`, so any user of those
+models keeps full-corpus reach regardless of this bridge. Making `general`
+meaningful requires deciding which models carry which server and setting the
+connections' `access_grants` accordingly. Tracked under next-step 6.
+
+**Code change made and then REVERTED** (`backend/open_webui/utils/mcp/client.py`),
+so the live deploy carries only the bridge change. Diff preserved in the session
+scratchpad as `mcp-sse-fallback.patch` (107 lines). What it did:
+`MCPClient.connect()` now negotiates transport — streamable HTTP first, falling
+back to `sse_client`, with the order reversed when the URL path ends in `/sse`.
+Session setup moved into `_establish_session()` shared by both (it indexes the
+transport tuple, since `streamablehttp_client` yields 3 elements and
+`sse_client` 2). Cancellation is re-raised, never swallowed to retry; on total
+failure the *first-tried* transport's exception is raised so a genuinely broken
+streamable server is not misreported as an SSE error.
+
+Verified through the real `MCPClient` against the live upstream: connects over
+`/sse`, lists 20 tools, `get_index` returns data. The bare URL without `/sse`
+still fails, correctly.
+
+This is the fix behind next-step 2 and open issues #1/#2: with it, all **four**
+bridges become deletable — four supervised Python processes, the restart
+supervision, and four env vars removed from the container. It was reverted
+because it was not needed to unblock live and would have shipped a core
+transport change alongside an unrelated config change.
+
+Reconsider it when a fifth scope tier appears: each new tier currently costs
+another process and another port, which does not scale. Note the tradeoff that
+made the bridge the right call here — connecting directly puts the
+secret-bearing URL in `webui.db` where any admin can read it, which is a poor
+fit for endpoints whose whole purpose is access control. The clean end state is
+the vault server serving streamable HTTP **and** accepting a header token
+instead of a path secret; then bridges and env vars both go away.
+
+---
+
 ## 8. Next steps
 
 1. **Verify answer quality in the UI** with both models on identical questions.
@@ -689,7 +1082,11 @@ npm run dev            # :5173
 # MCP bridges (temporary, until the vault servers serve streamable HTTP)
 VAULT_MCP_URL="<vault sse url>"   VAULT_BRIDGE_PORT=9090 python vault_bridge.py
 VAULT_MCP_URL="<threads sse url>" VAULT_BRIDGE_PORT=9091 python vault_bridge.py
+VAULT_MCP_URL="<db sse url>"      VAULT_BRIDGE_PORT=9092 python vault_bridge.py
 ```
+
+`start-dev.sh` launches only the first two bridges; the `:9092` one must be
+started by hand until that is fixed — see 7j.
 
 **Health checks**
 - Backend: `GET http://127.0.0.1:8080/health` → `{"status":true}`

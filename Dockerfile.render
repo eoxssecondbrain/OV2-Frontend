@@ -25,6 +25,12 @@ RUN npm ci --force
 
 COPY . .
 ENV APP_BUILD_HASH=cruz-render
+
+# Vite's chunk-rendering stage exceeds Node's default ~4 GB heap on this
+# codebase (6354 modules) and aborts with exit 134 -- V8 hitting its own
+# ceiling, not the kernel OOM-killing us, so the headroom exists and simply
+# has to be granted. Upstream ships the same setting commented out.
+ENV NODE_OPTIONS=--max-old-space-size=8192
 RUN npm run build
 
 ######## backend ########
@@ -40,8 +46,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app/backend
 
+# build-essential/gcc/python3-dev are insurance: most dependencies ship cp312
+# manylinux wheels, but any that does not will try to compile, and a missing
+# compiler costs a full rebuild to discover. Kept (not purged) because
+# --auto-remove can strip libstdc++6, which onnxruntime and friends need at
+# runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates pandoc netcat-openbsd \
+      build-essential gcc python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements-render.txt ./requirements.txt
@@ -53,9 +65,19 @@ RUN pip install --no-cache-dir uv \
 COPY --from=build /app/build /app/build
 COPY --from=build /app/package.json /app/package.json
 
+# Required, not cosmetic: env.py:179 reads BASE_DIR/CHANGELOG.md at import time,
+# and its fallback (pkgutil.get_data, line 184) raises OUTSIDE the try block --
+# so a missing changelog aborts the entire application import, not just the
+# release-notes feature.
+COPY --from=build /app/CHANGELOG.md /app/CHANGELOG.md
+
 COPY backend .
 COPY vault_bridge.py /app/vault_bridge.py
 COPY render-start.sh /app/render-start.sh
+
+# Migration/ops scripts. Without this, scripts/cruz_migrate.py never reaches the
+# container and the migration has to be piped in over SSH.
+COPY scripts /app/scripts
 RUN chmod +x /app/render-start.sh
 
 EXPOSE 8080

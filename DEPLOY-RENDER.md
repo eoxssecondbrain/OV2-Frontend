@@ -41,7 +41,23 @@ they are never in git):
 ```
 VAULT_MCP_URL     = https://raj-vault-mcp-server.onrender.com/<secret>/sse
 THREADS_MCP_URL   = https://claude-notes-vault.onrender.com/<secret>/sse
+DB_MCP_URL        = https://<db host>/mcp/<secret>/sse     # eoxs-wiki-db-full
+USERS_MCP_URL     = https://<db host>/mcp/<secret>/sse     # eoxs-wiki-db-general
 ```
+
+`DB_MCP_URL` and `USERS_MCP_URL` are two **scope tiers of the same corpus**, on
+the same host, differing only in the secret path:
+
+| | serverInfo | Contents | Bridge | Registered as |
+|---|---|---|---|---|
+| `DB_MCP_URL` | `eoxs-wiki-db-full` | Everything | `:9092` | `server:mcp:eoxs-db` |
+| `USERS_MCP_URL` | `eoxs-wiki-db-general` | Sensitive material removed | `:9093` | `server:mcp:eoxs-users` |
+
+**Do not cross them.** Both expose the same 20 tools with the same names and the
+same version string, so a swapped pair produces no error and no visible symptom
+— it just serves the unredacted corpus to ordinary users. The only way to tell
+them apart is row counts. After setting or changing either, call `get_index`
+through the bridge and check `wiki_pages`: `full` is ~1048, `general` ~307.
 
 Paste the real URLs with **no angle brackets** -- `render-start.sh` refuses to
 boot if it sees a leftover placeholder, rather than starting a service whose

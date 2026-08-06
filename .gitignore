@@ -320,3 +320,6 @@ claude-notes-vault/
 
 # Cruz local runtime logs
 .run/
+
+# EOXS originals kept locally when Cruz branding replaced them
+*.eoxs-backup.*

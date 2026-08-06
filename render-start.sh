@@ -19,7 +19,28 @@ fail() { echo "FATAL: $*" >&2; exit 1; }
 [ -n "${THREADS_MCP_URL:-}" ] || fail "THREADS_MCP_URL is not set"
 [ -n "${WEBUI_SECRET_KEY:-}" ] || fail "WEBUI_SECRET_KEY is not set"
 
-case "$VAULT_MCP_URL$THREADS_MCP_URL" in
+# DB_MCP_URL is optional: the database-backed vault is registered in the
+# database as server:mcp:eoxs-db on :9092. If the variable is absent the bridge
+# is simply not started -- but any model attached to that server will then have
+# tools that silently fail, so set it in the Render environment.
+if [ -z "${DB_MCP_URL:-}" ]; then
+  echo "WARN: DB_MCP_URL not set -- the eoxs-db tool server will be unreachable." >&2
+fi
+
+# USERS_MCP_URL is the general-scope vault: the same corpus with sensitive
+# material removed, for ordinary users. Registered as server:mcp:eoxs-users on
+# :9093. Optional for the same reason as DB_MCP_URL -- absent, the bridge is
+# simply not started.
+#
+# It MUST point at the eoxs-wiki-db-general endpoint, not the -full one. The two
+# are indistinguishable by tool list, tool count and version; only the row
+# counts differ. Crossing them wires the unredacted corpus to ordinary users
+# with no error and no visible symptom. See PROJECT_SOT.md 7m.
+if [ -z "${USERS_MCP_URL:-}" ]; then
+  echo "WARN: USERS_MCP_URL not set -- the eoxs-users tool server will be unreachable." >&2
+fi
+
+case "$VAULT_MCP_URL$THREADS_MCP_URL${DB_MCP_URL:-}${USERS_MCP_URL:-}" in
   *'<'*|*'>'*) fail "an MCP URL still contains a <...> placeholder" ;;
 esac
 
@@ -48,9 +69,19 @@ supervise() {
 supervise "eoxs-vault" "$VAULT_MCP_URL"   9090 &
 supervise "threads-ov" "$THREADS_MCP_URL" 9091 &
 
-# Wait for both bridges before accepting traffic, so the first request after a
+PORTS="9090 9091"
+if [ -n "${DB_MCP_URL:-}" ]; then
+  supervise "eoxs-db" "$DB_MCP_URL" 9092 &
+  PORTS="$PORTS 9092"
+fi
+if [ -n "${USERS_MCP_URL:-}" ]; then
+  supervise "eoxs-users" "$USERS_MCP_URL" 9093 &
+  PORTS="$PORTS 9093"
+fi
+
+# Wait for the bridges before accepting traffic, so the first request after a
 # deploy does not arrive to a half-ready service.
-for port in 9090 9091; do
+for port in $PORTS; do
   for _ in $(seq 1 30); do
     nc -z 127.0.0.1 "$port" && break
     sleep 1
