@@ -40,7 +40,18 @@ if [ -z "${USERS_MCP_URL:-}" ]; then
   echo "WARN: USERS_MCP_URL not set -- the eoxs-users tool server will be unreachable." >&2
 fi
 
-case "$VAULT_MCP_URL$THREADS_MCP_URL${DB_MCP_URL:-}${USERS_MCP_URL:-}" in
+# INTERN_MCP_URL is the intern-scope vault, for MBA interns. Registered as
+# server:mcp:eoxs-intern on :9094. Optional like the two above.
+#
+# It MUST point at the eoxs-wiki-db-intern endpoint. All the tiers on that host
+# expose the same tool names and the same version string, so a crossed pair
+# fails silently -- the tools work, they just serve the wrong scope. Verify with
+# get_index through the bridge after any change. See PROJECT_SOT.md 7p.
+if [ -z "${INTERN_MCP_URL:-}" ]; then
+  echo "WARN: INTERN_MCP_URL not set -- the eoxs-intern tool server will be unreachable." >&2
+fi
+
+case "$VAULT_MCP_URL$THREADS_MCP_URL${DB_MCP_URL:-}${USERS_MCP_URL:-}${INTERN_MCP_URL:-}" in
   *'<'*|*'>'*) fail "an MCP URL still contains a <...> placeholder" ;;
 esac
 
@@ -77,6 +88,10 @@ fi
 if [ -n "${USERS_MCP_URL:-}" ]; then
   supervise "eoxs-users" "$USERS_MCP_URL" 9093 &
   PORTS="$PORTS 9093"
+fi
+if [ -n "${INTERN_MCP_URL:-}" ]; then
+  supervise "eoxs-intern" "$INTERN_MCP_URL" 9094 &
+  PORTS="$PORTS 9094"
 fi
 
 # Wait for the bridges before accepting traffic, so the first request after a
