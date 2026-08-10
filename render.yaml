@@ -65,3 +65,13 @@ services:
       # Verify with a get_index call after any change (PROJECT_SOT.md 7m).
       - key: USERS_MCP_URL
         sync: false
+
+      # Intern-scope vault, for MBA interns. Bridged on :9094, registered as
+      # server:mcp:eoxs-intern.
+      #
+      # Must be the endpoint whose serverInfo is eoxs-wiki-db-INTERN. Every tier
+      # on that host reports the same tool names and version, so nothing about a
+      # crossed pair looks broken -- it just serves the wrong scope to the wrong
+      # audience. Verify with get_index after any change (PROJECT_SOT.md 7p).
+      - key: INTERN_MCP_URL
+        sync: false
