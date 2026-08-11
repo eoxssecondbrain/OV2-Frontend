@@ -35,29 +35,44 @@ value.
 
 ## 3. Set the secrets
 
-In the service's **Environment** tab, set these two (they are `sync: false`, so
-they are never in git):
+In the service's **Environment** tab, set these (they are `sync: false`, so
+they are never in git). The first two are required; the rest are optional —
+absent, the bridge simply does not start and any model attached to that server
+has tools that fail at runtime:
 
 ```
 VAULT_MCP_URL     = https://raj-vault-mcp-server.onrender.com/<secret>/sse
 THREADS_MCP_URL   = https://claude-notes-vault.onrender.com/<secret>/sse
 DB_MCP_URL        = https://<db host>/mcp/<secret>/sse     # eoxs-wiki-db-full
 USERS_MCP_URL     = https://<db host>/mcp/<secret>/sse     # eoxs-wiki-db-general
+INTERN_MCP_URL    = https://<db host>/mcp/<secret>/sse     # eoxs-wiki-db-intern
+HR_MCP_URL        = https://<db host>/mcp/<secret>/sse     # eoxs-wiki-db-hr
 ```
 
-`DB_MCP_URL` and `USERS_MCP_URL` are two **scope tiers of the same corpus**, on
-the same host, differing only in the secret path:
+The last four are **scope tiers on the same host**, differing only in the secret
+path:
 
 | | serverInfo | Contents | Bridge | Registered as |
 |---|---|---|---|---|
 | `DB_MCP_URL` | `eoxs-wiki-db-full` | Everything | `:9092` | `server:mcp:eoxs-db` |
 | `USERS_MCP_URL` | `eoxs-wiki-db-general` | Sensitive material removed | `:9093` | `server:mcp:eoxs-users` |
+| `INTERN_MCP_URL` | `eoxs-wiki-db-intern` | Intern scope | `:9094` | `server:mcp:eoxs-intern` |
+| `HR_MCP_URL` | `eoxs-wiki-db-hr` | HR scope; no tickets or sales orders | `:9095` | `server:mcp:eoxs-hr` |
 
-**Do not cross them.** Both expose the same 20 tools with the same names and the
-same version string, so a swapped pair produces no error and no visible symptom
-— it just serves the unredacted corpus to ordinary users. The only way to tell
-them apart is row counts. After setting or changing either, call `get_index`
-through the bridge and check `wiki_pages`: `full` is ~1048, `general` ~307.
+**Do not cross them.** They share tool names and version string, so a swapped
+pair produces no error and no visible symptom — it just serves the wrong corpus
+to the wrong audience. After setting or changing any of them, call `get_index`
+through the bridge and check the row counts:
+
+| serverInfo | wiki_pages | tools |
+|---|---|---|
+| `-full` | ~1048 | 20 |
+| `-general` | ~307 | 20 |
+| `-hr` | ~1298 | 17 |
+
+`-hr` is **not** a subset of `-full`: it has more wiki pages and no `tickets` or
+`sales_orders` at all. Its 17-tool count is the one cheap tell; `full` and
+`general` are distinguishable only by row count.
 
 Paste the real URLs with **no angle brackets** -- `render-start.sh` refuses to
 boot if it sees a leftover placeholder, rather than starting a service whose

@@ -4,7 +4,7 @@ Authoritative state of the EOXS AI project. Governed by `BUILDING_GUIDELINES.md`
 Every code change, config change, decision, and checkpoint is recorded here in
 the session it happens. If this file disagrees with reality, this file is wrong.
 
-**Last updated:** 2026-08-04
+**Last updated:** 2026-08-11
 
 ---
 
@@ -1106,6 +1106,84 @@ incident in 7l.
 
 ---
 
+## 7q. HR-scope vault bridged as `eoxs-hr` on :9095 (2026-08-11)
+
+Request: add `https://5.223.44.95/mcp/<hr-secret>/sse` "in the frontend".
+
+**It cannot be added in the frontend.** The URL is SSE-only and
+`utils/mcp/client.py:12` still imports `streamablehttp_client` and nothing else
+(the negotiation patch from 7m remains reverted), so pasting it into Admin →
+Tools returns "Connection failed" — the same non-bug as 7m. It also should not
+live in `webui.db`, where the path secret would be readable by any admin. So
+this is a fifth bridge, following the 7m pattern exactly.
+
+**Note on the intern tier:** `eoxs-intern` (:9094) shipped in 480865d10 with no
+SOT entry at all, and `render-start.sh` points readers at "PROJECT_SOT.md 7p"
+for it — a dangling reference. Not fixed here; flagged so the next person does
+not go looking for a section that was never written.
+
+**Scope verified against the live endpoint before wiring anything** — not taken
+on trust, since the 7m failure mode is a crossed tier that looks perfectly
+healthy:
+
+| | `-full` | `-general` | **`-hr`** |
+|---|---|---|---|
+| tools | 20 | 20 | **17** |
+| wiki_pages | 1048 | 307 | **1298** |
+| email_threads | 30392 | 23187 | **28987** |
+| tickets | 1955 | 1780 | **absent** |
+| fireflies / fathom | 2252 / 131 | 1907 / 95 | **2221 / 129** |
+| impl_tasks | 827 | 753 | **828** |
+| sales_orders | 185 | 185 | **absent** |
+
+**This tier is not a subset of `-full`** — it carries *more* wiki pages (1298 vs
+1048) and drops `tickets` and `sales_orders` entirely, along with the three
+tools that serve them. It is a differently-built corpus, not a redaction of the
+full one, so the "strict subset" model from 7m does not generalise. Version
+string is `1.29.0` on all three, as before.
+
+The 17-tool count is the one cheap tell that distinguishes `-hr` from the other
+two. It does not distinguish `-full` from `-general`, so the `get_index`
+row-count check remains the only reliable verification for those.
+
+**Changed (in git):**
+
+- `render.yaml` — `HR_MCP_URL`, `sync: false`, with the scope table warning.
+- `render-start.sh` — optional guard, `case` placeholder check, `supervise
+  "eoxs-hr" "$HR_MCP_URL" 9095`, and `9095` added to `PORTS`. Header comment
+  corrected: it still claimed "two MCP bridges" and ":9090 / :9091" at four.
+- `.env` — `HR_MCP_URL` for local dev (gitignored).
+
+**Verified**, running `vault_bridge.py` exactly as production invokes it
+(`VAULT_MCP_URL=<hr> VAULT_BRIDGE_PORT=9095`), then connecting through the real
+`MCPClient` over streamable HTTP: connects, 17 tool specs, `get_index` returns
+the row counts above. `bash -n` clean, `render.yaml` parses.
+
+**Still to do by hand (dashboard + UI, not in git):**
+
+1. Set `HR_MCP_URL` in the Render environment.
+2. Merge to **`deploy/render`**, not `main` — see the branch trap in 7n. Confirm
+   with `git show upstream/deploy/render:render-start.sh | grep 9095` before
+   debugging any runtime symptom.
+3. Register the connection: type `mcp`, URL `http://127.0.0.1:9095/mcp`,
+   auth `none`, id `eoxs-hr`.
+4. Attach `server:mcp:eoxs-hr` to whichever workspace models should carry it and
+   set `access_grants`.
+
+**Same unresolved scoping problem as 7m.** Adding this connection restricts
+nobody by itself: `cruz`/`cruz-pro`/`cruz-lite` still list `server:mcp:eoxs-db`
+(the full corpus) in `toolIds`, so an HR user on those models keeps full-corpus
+reach. HR is now the *fourth* tier competing for the same three workspace
+models — next-step 6 is now the blocking item, not a background one.
+
+**Five bridges is past the point where this pattern pays.** Each tier costs a
+supervised process, a port, an env var and a dashboard entry. The reverted
+SSE-negotiation patch (`mcp-sse-fallback.patch`, 7m) deletes all five. That is
+the trigger condition 7m named — "reconsider when a fifth scope tier appears."
+It has appeared.
+
+---
+
 ## 8. Next steps
 
 1. **Verify answer quality in the UI** with both models on identical questions.
@@ -1148,6 +1226,7 @@ npm run dev            # :5173
 VAULT_MCP_URL="<vault sse url>"   VAULT_BRIDGE_PORT=9090 python vault_bridge.py
 VAULT_MCP_URL="<threads sse url>" VAULT_BRIDGE_PORT=9091 python vault_bridge.py
 VAULT_MCP_URL="<db sse url>"      VAULT_BRIDGE_PORT=9092 python vault_bridge.py
+VAULT_MCP_URL="<hr sse url>"      VAULT_BRIDGE_PORT=9095 python vault_bridge.py
 ```
 
 `start-dev.sh` launches only the first two bridges; the `:9092` one must be

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Container entrypoint: two MCP bridges + the Open WebUI backend.
+# Container entrypoint: the MCP bridges + the Open WebUI backend.
 #
-# The bridges listen on 127.0.0.1:9090 / :9091 inside this container, which is
-# exactly what the tool-server URLs in the database already point at -- so the
-# stored configuration works unchanged in production.
+# The bridges listen on 127.0.0.1:9090 through :9095 inside this container,
+# which is exactly what the tool-server URLs in the database already point at
+# -- so the stored configuration works unchanged in production. Two are
+# required; the rest start only when their URL variable is set.
 #
 # Each bridge is supervised: if one dies (an upstream Render vault going away,
 # say) it is restarted rather than silently leaving the assistant with no tools.
@@ -51,7 +52,18 @@ if [ -z "${INTERN_MCP_URL:-}" ]; then
   echo "WARN: INTERN_MCP_URL not set -- the eoxs-intern tool server will be unreachable." >&2
 fi
 
-case "$VAULT_MCP_URL$THREADS_MCP_URL${DB_MCP_URL:-}${USERS_MCP_URL:-}${INTERN_MCP_URL:-}" in
+# HR_MCP_URL is the HR-scope vault. Registered as server:mcp:eoxs-hr on :9095.
+# Optional like the three above.
+#
+# It MUST point at the eoxs-wiki-db-hr endpoint. This tier is distinguishable
+# by tool count (17, against 20 for the others) but NOT by tool name or
+# version, so verify with get_index through the bridge after any change.
+# See PROJECT_SOT.md 7q.
+if [ -z "${HR_MCP_URL:-}" ]; then
+  echo "WARN: HR_MCP_URL not set -- the eoxs-hr tool server will be unreachable." >&2
+fi
+
+case "$VAULT_MCP_URL$THREADS_MCP_URL${DB_MCP_URL:-}${USERS_MCP_URL:-}${INTERN_MCP_URL:-}${HR_MCP_URL:-}" in
   *'<'*|*'>'*) fail "an MCP URL still contains a <...> placeholder" ;;
 esac
 
@@ -92,6 +104,10 @@ fi
 if [ -n "${INTERN_MCP_URL:-}" ]; then
   supervise "eoxs-intern" "$INTERN_MCP_URL" 9094 &
   PORTS="$PORTS 9094"
+fi
+if [ -n "${HR_MCP_URL:-}" ]; then
+  supervise "eoxs-hr" "$HR_MCP_URL" 9095 &
+  PORTS="$PORTS 9095"
 fi
 
 # Wait for the bridges before accepting traffic, so the first request after a
