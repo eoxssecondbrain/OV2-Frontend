@@ -75,3 +75,14 @@ services:
       # audience. Verify with get_index after any change (PROJECT_SOT.md 7p).
       - key: INTERN_MCP_URL
         sync: false
+
+      # HR-scope vault, for the HR function. Bridged on :9095, registered as
+      # server:mcp:eoxs-hr.
+      #
+      # Must be the endpoint whose serverInfo is eoxs-wiki-db-HR. Unlike the
+      # tiers above this one is NOT a subset of -full: it carries more wiki
+      # pages (1298 vs 1048), fewer email threads, and no tickets or
+      # sales_orders at all -- 17 tools rather than 20. Verify with get_index
+      # after any change (PROJECT_SOT.md 7q).
+      - key: HR_MCP_URL
+        sync: false
