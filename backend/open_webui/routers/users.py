@@ -317,6 +317,18 @@ class UserUsagePeriod(BaseModel):
     days: int
 
 
+class UserAllowance(BaseModel):
+    """This user's monthly spend allowance, as the spend-cap filter computes it."""
+
+    budget: float
+    spent: float
+    remaining: float
+    percent_used: int
+    resets_at: int  # epoch seconds; start of next calendar month in the cap's timezone
+    rule: str  # which rule produced the budget: person / group / role / default
+    unlimited: bool = False
+
+
 class UserUsageResponse(BaseModel):
     totals: UserUsageTotals
     heatmap: list[UserUsageHeatmapEntry]
@@ -326,6 +338,78 @@ class UserUsageResponse(BaseModel):
     top_models: list[UserUsageModelEntry]
     top_tools: list[UserUsageToolEntry] = []
     period: UserUsagePeriod
+    allowance: Optional[UserAllowance] = None
+
+
+# Function id of the Monthly Spend Cap filter. Budgets and pricing are read from
+# that function rather than duplicated here, so there is one place to change a
+# number and the figure shown to the user always matches the one enforced.
+SPEND_CAP_FUNCTION_ID = 'monthly_spend_cap'
+
+
+async def _get_user_allowance(request: Request, user) -> Optional[UserAllowance]:
+    """Ask the installed spend-cap filter what this user has left.
+
+    Returns None whenever the answer would be a guess -- the filter is not
+    installed, is disabled, or errored. The Usage page then simply omits the
+    section rather than showing a number nobody is enforcing.
+    """
+    from open_webui.models.functions import Functions
+    from open_webui.utils.plugin import get_function_module_from_cache
+
+    try:
+        function = await Functions.get_function_by_id(SPEND_CAP_FUNCTION_ID)
+        if not function or not function.is_active:
+            return None
+
+        module, _, _ = await get_function_module_from_cache(request, SPEND_CAP_FUNCTION_ID)
+        if hasattr(module, 'valves') and hasattr(module, 'Valves'):
+            valves = await Functions.get_function_valves_by_id(SPEND_CAP_FUNCTION_ID)
+            module.valves = module.Valves(**(valves if valves else {}))
+
+        if not getattr(module.valves, 'enabled', True):
+            return None
+
+        user_dict = {'id': user.id, 'email': user.email, 'role': user.role}
+
+        exempt = {r.strip() for r in str(getattr(module.valves, 'exempt_roles', '') or '').split(',') if r.strip()}
+        since, reset_at = module._month()
+        spent = await module._spend(user.id, since)
+
+        if user.role in exempt:
+            return UserAllowance(
+                budget=0.0,
+                spent=round(spent, 2),
+                remaining=0.0,
+                percent_used=0,
+                resets_at=int(reset_at.timestamp()),
+                rule='exempt',
+                unlimited=True,
+            )
+
+        budget, rule = await module._budget(user_dict)
+        if budget <= 0:
+            return UserAllowance(
+                budget=0.0,
+                spent=round(spent, 2),
+                remaining=0.0,
+                percent_used=0,
+                resets_at=int(reset_at.timestamp()),
+                rule=rule,
+                unlimited=True,
+            )
+
+        return UserAllowance(
+            budget=round(float(budget), 2),
+            spent=round(spent, 2),
+            remaining=round(max(0.0, budget - spent), 2),
+            percent_used=min(100, int(spent * 100 / budget)),
+            resets_at=int(reset_at.timestamp()),
+            rule=rule,
+        )
+    except Exception:
+        log.exception('Could not compute the spend allowance for the usage page')
+        return None
 
 
 def _week_start(date: datetime) -> datetime:
@@ -655,6 +739,7 @@ async def update_user_info_by_session_user(  # PATCH-style merge
 
 @router.get('/usage', response_model=UserUsageResponse)
 async def get_user_usage_by_session_user(
+    request: Request,
     days: Optional[int] = Query(None, ge=7, le=732),
     start_date: Optional[int] = Query(None),
     end_date: Optional[int] = Query(None),
@@ -725,6 +810,7 @@ async def get_user_usage_by_session_user(
         top_models=top_models,
         top_tools=top_tools,
         period=UserUsagePeriod(start_date=period_start, end_date=period_end, days=period_days),
+        allowance=await _get_user_allowance(request, user),
     )
 
 

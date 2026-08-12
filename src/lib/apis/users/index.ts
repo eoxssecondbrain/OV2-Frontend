@@ -708,6 +708,16 @@ export type UserUsageResponse = {
 		end_date: number;
 		days: number;
 	};
+	// Present only when the Monthly Spend Cap filter is installed and enabled.
+	allowance?: {
+		budget: number;
+		spent: number;
+		remaining: number;
+		percent_used: number;
+		resets_at: number;
+		rule: string;
+		unlimited: boolean;
+	} | null;
 };
 
 export const getUserUsage = async (

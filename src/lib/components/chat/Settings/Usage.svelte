@@ -266,6 +266,15 @@
 
 	const modelName = (id: string | null) => (id ? (modelNames.get(id) ?? id) : '-');
 
+	const formatUsd = (amount: number) =>
+		`$${(amount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+	// `resets_at` is the start of the next calendar month, in the cap's timezone.
+	const resetsOn = (epoch: number) =>
+		new Date(epoch * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+	const daysUntil = (epoch: number) => Math.max(1, Math.ceil((epoch * 1000 - Date.now()) / 86400000));
+
 	onMount(loadUsage);
 </script>
 
@@ -284,7 +293,57 @@
 		</div>
 	{:else}
 		<div class="scrollbar-hover min-h-0 flex-1 overflow-y-auto pr-1.5">
-			<UserSettingSection title={$i18n.t('Overview')} first>
+			{#if usage.allowance}
+				<UserSettingSection title={$i18n.t('Monthly allowance')} first>
+					{#if usage.allowance.unlimited}
+						<div class="text-sm font-medium text-gray-900 dark:text-white">
+							{$i18n.t('No spending limit')}
+						</div>
+						<div class="mt-0.5 text-[0.6875rem] text-gray-400 dark:text-gray-600">
+							{$i18n.t('{{amount}} used this month', { amount: formatUsd(usage.allowance.spent) })}
+						</div>
+					{:else}
+						<div class="flex items-baseline justify-between gap-3">
+							<div class="text-lg font-medium text-gray-900 dark:text-white">
+								{$i18n.t('{{amount}} left', { amount: formatUsd(usage.allowance.remaining) })}
+							</div>
+							<div class="text-xs text-gray-400 dark:text-gray-600">
+								{$i18n.t('{{spent}} of {{budget}} used', {
+									spent: formatUsd(usage.allowance.spent),
+									budget: formatUsd(usage.allowance.budget)
+								})}
+							</div>
+						</div>
+
+						<div
+							class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-850"
+							role="progressbar"
+							aria-valuenow={usage.allowance.percent_used}
+							aria-valuemin="0"
+							aria-valuemax="100"
+							aria-label={$i18n.t('Monthly allowance')}
+						>
+							<div
+								class="h-full rounded-full transition-all {usage.allowance.percent_used >= 100
+									? 'bg-red-500'
+									: usage.allowance.percent_used >= 80
+										? 'bg-amber-500'
+										: 'bg-gray-900 dark:bg-gray-100'}"
+								style="width: {Math.max(2, usage.allowance.percent_used)}%"
+							></div>
+						</div>
+
+						<div class="mt-1.5 text-[0.6875rem] text-gray-400 dark:text-gray-600">
+							{$i18n.t('Resets on {{date}}, {{days}} days from now', {
+								date: resetsOn(usage.allowance.resets_at),
+								days: daysUntil(usage.allowance.resets_at)
+							})}
+						</div>
+					{/if}
+				</UserSettingSection>
+			{/if}
+
+			<UserSettingSection title={$i18n.t('Overview')} first={!usage.allowance}>
 				<div class="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-5">
 					<div>
 						<div class="text-sm font-medium text-gray-900 dark:text-white">
